@@ -1,25 +1,38 @@
 {
     "name": "DataTycoon",
     "tree": {
-        "src": {
-            "ReplicatedStorage": {
-                "Modules": {
-                    "$path": "src/ReplicatedStorage/Modules"
-                },
-                "Events": {
-                    "$path": "src/ReplicatedStorage/Events"
-                }
+        "$className": "DataModel",
+        "ReplicatedStorage": {
+            "$className": "ReplicatedStorage",
+            "Modules": {
+                "$path": "src/ReplicatedStorage/Modules"
             },
-            "ServerScriptService": {
-                "Systems": {
-                    "$path": "src/ServerScriptService/Systems"
-                }
-            },
+            "Events": {
+                "$path": "src/ReplicatedStorage/Events"
+            }
+        },
+        "ServerScriptService": {
+            "$className": "ServerScriptService",
+            "Systems": {
+                "$path": "src/ServerScriptService/Systems"
+            }
+        },
+        "StarterPlayer": {
+            "$className": "StarterPlayer",
             "StarterPlayerScripts": {
+                "$className": "StarterPlayerScripts",
                 "Client": {
                     "$path": "src/StarterPlayerScripts/Client"
                 }
             }
+        },
+        "Workspace": {
+            "$className": "Workspace",
+            "$path": "src/Workspace"
+        },
+        "StarterGui": {
+            "$className": "StarterGui",
+            "$path": "src/StarterGui"
         }
     }
 }
