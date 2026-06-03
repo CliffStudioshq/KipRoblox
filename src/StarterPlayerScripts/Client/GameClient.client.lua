@@ -6,8 +6,6 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -67,21 +65,13 @@ notifLabel.Parent = notifFrame
 
 -- === FUNCTIONS ===
 
--- Update Data display
 local function UpdateDataDisplay(amount)
     dataLabel.Text = "💰 Data: " .. tostring(amount)
-    
-    -- Flash effect
-    dataLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-    task.delay(0.3, function()
-        dataLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
-    end)
+    dataLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
 end
 
--- Show notification
 local function ShowNotification(message, notifType)
     notifLabel.Text = message
-    
     if notifType == "success" then
         notifLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
     elseif notifType == "error" then
@@ -89,8 +79,6 @@ local function ShowNotification(message, notifType)
     else
         notifLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
     end
-    
-    -- Fade out after 3 seconds
     task.delay(3, function()
         notifLabel.Text = ""
     end)
@@ -98,19 +86,15 @@ end
 
 -- === EVENT CONNECTIONS ===
 
--- Data updated
 Events.DataUpdated.OnClientEvent:Connect(function(newAmount)
     UpdateDataDisplay(newAmount)
 end)
 
--- Notification
 Events.Notification.OnClientEvent:Connect(function(message, notifType)
     ShowNotification(message, notifType)
 end)
 
--- Plot purchased (update visuals)
 Events.PlotPurchased.OnClientEvent:Connect(function(plotId, ownerId)
-    -- TODO: Update plot color/visual to show ownership
     if ownerId == player.UserId then
         ShowNotification("You purchased a plot!", "success")
     end
@@ -118,7 +102,10 @@ end)
 
 -- === INITIAL DATA LOAD ===
 
-task.wait(1) -- Wait for everything to load
+-- Wait for everything to load
+task.wait(3)
+
+-- Try to get player data from server
 local success, data = pcall(function()
     return Events.GetPlayerData:InvokeServer()
 end)
@@ -127,8 +114,9 @@ if success and data then
     UpdateDataDisplay(data.Data)
     print("DataTycoon: Client loaded! Data: " .. data.Data)
 else
-    warn("DataTycoon: Failed to load player data")
-    UpdateDataDisplay(0)
+    -- If server data not available, show default
+    UpdateDataDisplay(100)
+    print("DataTycoon: Client loaded with default data")
 end
 
 print("DataTycoon: Client ready!")
