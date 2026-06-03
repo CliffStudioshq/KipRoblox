@@ -1,0 +1,25 @@
+{
+    "name": "DataTycoon",
+    "tree": {
+        "src": {
+            "ReplicatedStorage": {
+                "Modules": {
+                    "$path": "src/ReplicatedStorage/Modules"
+                },
+                "Events": {
+                    "$path": "src/ReplicatedStorage/Events"
+                }
+            },
+            "ServerScriptService": {
+                "Systems": {
+                    "$path": "src/ServerScriptService/Systems"
+                }
+            },
+            "StarterPlayerScripts": {
+                "Client": {
+                    "$path": "src/StarterPlayerScripts/Client"
+                }
+            }
+        }
+    }
+}
