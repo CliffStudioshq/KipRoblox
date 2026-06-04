@@ -51,13 +51,13 @@ local CONFIG = {
     BLOCK_REWARD = 5,
     PASSIVE_INCOME = 1,  -- Data per second
     
-    BASE_PLOT_PRICE = 30,
-    PLOT_PRICE_MULTIPLIER = 1.6,
-    MAX_PLOTS = 12,
-    PLOT_SIZE = 70,
-    PLOT_SPACING = 80,  -- 70 plot + 10 road
-    PLOT_RANGE = 3,     -- 7x7 grid, skip center 3x3 = 40 plots
-    PLOT_SKIP_CENTER = 2, -- Skip plots where max(|x|,|z|) < 2
+    BASE_PLOT_PRICE = 40,
+    PLOT_PRICE_MULTIPLIER = 1.8,
+    MAX_PLOTS = 8,
+    PLOT_SIZE = 80,
+    PLOT_SPACING = 110,  -- 80 plot + 30 gap
+    PLOT_RANGE = 3,
+    PLOT_MIN_DIST = 3,  -- Only outermost ring = 16 plots total
     
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,   dps = 2,   slots = 1},
@@ -67,11 +67,11 @@ local CONFIG = {
     },
     
     HOUSE_TIERS = {
-        {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 4},
-        {name = "Small House",   cost = 200,   maxComputers = 2,  maxPlots = 10},
-        {name = "Modern House",  cost = 1000,  maxComputers = 4,  maxPlots = 20},
-        {name = "Tech Villa",    cost = 5000,  maxComputers = 8,  maxPlots = 40},
-        {name = "Mega Compound", cost = 25000, maxComputers = 16, maxPlots = 40},
+        {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
+        {name = "Small House",   cost = 200,   maxComputers = 2,  maxPlots = 4},
+        {name = "Modern House",  cost = 1000,  maxComputers = 4,  maxPlots = 8},
+        {name = "Tech Villa",    cost = 5000,  maxComputers = 8,  maxPlots = 16},
+        {name = "Mega Compound", cost = 25000, maxComputers = 16, maxPlots = 16},
     },
     
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
@@ -100,8 +100,8 @@ local function InitPlots()
     for x = -CONFIG.PLOT_RANGE, CONFIG.PLOT_RANGE do
         for z = -CONFIG.PLOT_RANGE, CONFIG.PLOT_RANGE do
             local dist = math.max(math.abs(x), math.abs(z))
-            -- Skip center area (that's the data hub)
-            if dist >= CONFIG.PLOT_SKIP_CENTER then
+            -- Only outermost ring for privacy
+            if dist >= CONFIG.PLOT_MIN_DIST then
                 local plotId = "plot_" .. x .. "_" .. z
                 local price = math.floor(CONFIG.BASE_PLOT_PRICE * (CONFIG.PLOT_PRICE_MULTIPLIER ^ dist))
                 Plots[plotId] = {
@@ -120,7 +120,7 @@ local function InitPlots()
     end
     local count = 0
     for _ in pairs(Plots) do count = count + 1 end
-    print("DataTycoon: " .. count .. " plots initialized (outer ring, " .. CONFIG.PLOT_SPACING .. " spacing)")
+    print("DataTycoon: " .. count .. " plots (outer ring, " .. CONFIG.PLOT_SPACING .. " spacing)")
 end
 
 -- === DATA FUNCTIONS ===

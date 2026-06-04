@@ -460,17 +460,19 @@ local plotFolder = Instance.new("Folder")
 plotFolder.Name = "PlotMarkers"
 plotFolder.Parent = workspace
 
-local PLOT_SIZE = 70
-local PLOT_SPACING = 80  -- 70 plot + 10 road gap
-local PLOT_RANGE = 3  -- 7x7 grid = 49 plots
+local PLOT_SIZE = 80
+local PLOT_GAP = 30   -- Road/gap between plots
+local PLOT_SPACING = PLOT_SIZE + PLOT_GAP  -- 110 total
+local PLOT_RANGE = 3  -- 7x7 grid
+local PLOT_MIN_DIST = 3  -- Only outermost ring (distance = 3) = 16 plots
 
--- Generate plot positions in outer ring (skip center area)
+-- Generate plot positions: ONLY the outermost ring for maximum privacy
 local plotPositions = {}
 for x = -PLOT_RANGE, PLOT_RANGE do
     for z = -PLOT_RANGE, PLOT_RANGE do
         local dist = math.max(math.abs(x), math.abs(z))
-        -- Only outer ring: skip the center 3x3 area
-        if dist >= 2 then
+        -- Only outermost ring
+        if dist >= PLOT_MIN_DIST then
             table.insert(plotPositions, {x = x, z = z, dist = dist})
         end
     end
@@ -627,7 +629,7 @@ for _, pp in ipairs(plotPositions) do
     end
 end
 
-print("DataTycoon: " .. #plotPositions .. " player plots created!")
+print("DataTycoon: " .. #plotPositions .. " player plots created (outer ring only, " .. PLOT_SPACING .. " spacing)!")
 
 -- ============================================================
 -- ROADS (connecting everything)
