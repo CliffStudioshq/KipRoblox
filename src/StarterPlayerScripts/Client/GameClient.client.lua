@@ -390,21 +390,18 @@ task.spawn(function()
     end
 end)
 
--- Method 4: Local increment as safety net (starts immediately)
+-- Method 4: Display only (read from leaderstats, never overwrite)
 task.spawn(function()
-    task.wait(3)
+    task.wait(2)
     while true do
-        -- Only increment if we haven't received a server update recently
         local ls = player:FindFirstChild("leaderstats")
         if ls then
             local dv = ls:FindFirstChild("Data")
-            if dv and dv.Value > 0 then
-                currentData = dv.Value
+            if dv then
+                dataLabel.Text = "💰  " .. tostring(dv.Value)
             end
         end
-        dataLabel.Text = "💰  " .. tostring(currentData)
-        currentData = currentData + 1
-        task.wait(1)
+        task.wait(1.5)
     end
 end)
 
