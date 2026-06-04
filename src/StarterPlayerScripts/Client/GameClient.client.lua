@@ -578,7 +578,7 @@ task.spawn(function()
     -- Buy plot button + E key
     if purchasePlotEvent then
         local function BuyPlot()
-            purchasePlotEvent:FireServer("plot_0_0")
+            purchasePlotEvent:FireServer("plot_3_0")  -- Buy an outer plot
         end
         buyPlotBtn.MouseButton1Click:Connect(BuyPlot)
         UserInputService.InputBegan:Connect(function(input, gp)
@@ -593,7 +593,7 @@ task.spawn(function()
     -- Place computer button
     if placeComputerEvent then
         placeCompBtn.MouseButton1Click:Connect(function()
-            placeComputerEvent:FireServer("plot_0_0", 1)
+            placeComputerEvent:FireServer("plot_3_0", 1)
         end)
         print("DataTycoon: Place computer connected")
     end
