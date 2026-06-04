@@ -1,6 +1,6 @@
 --[[
     GameClient.client.lua — DataTycoon Client
-    v0.6 — Full game UI: blocks, land, computers, house upgrades
+    v0.7 — Polished UI overhaul: spacious, modern, clean
 ]]
 
 local Players = game:GetService("Players")
@@ -12,224 +12,430 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 print("DataTycoon: Client starting...")
 
--- === CREATE UI ===
+-- === COLOR PALETTE ===
+local C = {
+    BG_DARK      = Color3.fromRGB(16, 16, 28),
+    BG_CARD      = Color3.fromRGB(24, 24, 42),
+    BG_HOVER     = Color3.fromRGB(35, 35, 55),
+    ACCENT_GREEN = Color3.fromRGB(0, 220, 120),
+    ACCENT_BLUE  = Color3.fromRGB(60, 140, 255),
+    ACCENT_PURPLE= Color3.fromRGB(140, 80, 255),
+    ACCENT_ORANGE= Color3.fromRGB(255, 140, 40),
+    ACCENT_RED   = Color3.fromRGB(255, 70, 70),
+    ACCENT_CYAN  = Color3.fromRGB(0, 200, 220),
+    TEXT_WHITE   = Color3.fromRGB(240, 240, 255),
+    TEXT_DIM     = Color3.fromRGB(160, 160, 190),
+    TEXT_MUTED   = Color3.fromRGB(100, 100, 130),
+    BORDER       = Color3.fromRGB(40, 40, 65),
+}
+
+-- === HELPERS ===
+
+local function Corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 10)
+    c.Parent = parent
+    return c
+end
+
+local function Stroke(parent, color, thickness)
+    local s = Instance.new("UIStroke")
+    s.Color = color or C.BORDER
+    s.Thickness = thickness or 1
+    s.Parent = parent
+    return s
+end
+
+local function Padding(parent, t, b, l, r)
+    local p = Instance.new("UIPadding")
+    p.PaddingTop = UDim.new(0, t or 8)
+    p.PaddingBottom = UDim.new(0, b or 8)
+    p.PaddingLeft = UDim.new(0, l or 12)
+    p.PaddingRight = UDim.new(0, r or 12)
+    p.Parent = parent
+    return p
+end
+
+-- === MAIN CONTAINER ===
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DataTycoonHUD"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
--- Data display (top-right)
-local dataFrame = Instance.new("Frame")
-dataFrame.Name = "DataDisplay"
-dataFrame.Size = UDim2.new(0, 220, 0, 70)
-dataFrame.Position = UDim2.new(1, -230, 0, 10)
-dataFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
-dataFrame.BackgroundTransparency = 0.2
-dataFrame.Parent = screenGui
+-- ============================================================
+-- TOP BAR (thin strip across the top)
+-- ============================================================
 
-local dataCorner = Instance.new("UICorner")
-dataCorner.CornerRadius = UDim.new(0, 10)
-dataCorner.Parent = dataFrame
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 56)
+topBar.Position = UDim2.new(0, 0, 0, 0)
+topBar.BackgroundColor3 = C.BG_DARK
+topBar.BackgroundTransparency = 0.15
+topBar.Parent = screenGui
+Stroke(topBar, C.BORDER, 1)
+
+local topBarLayout = Instance.new("UIListLayout")
+topBarLayout.FillDirection = Enum.FillDirection.Horizontal
+topBarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+topBarLayout.Padding = UDim.new(0, 16)
+topBarLayout.Parent = topBar
+Padding(topBar, 0, 0, 20, 20)
+
+-- Data display (inside top bar, left side)
+local dataIcon = Instance.new("TextLabel")
+dataIcon.Size = UDim2.new(0, 30, 1, 0)
+dataIcon.BackgroundTransparency = 1
+dataIcon.Text = "💰"
+dataIcon.TextSize = 22
+dataIcon.Font = Enum.Font.GothamBold
+dataIcon.TextColor3 = C.TEXT_WHITE
+dataIcon.Parent = topBar
 
 local dataLabel = Instance.new("TextLabel")
 dataLabel.Name = "DataLabel"
-dataLabel.Size = UDim2.new(1, -10, 0.6, 0)
-dataLabel.Position = UDim2.new(0, 5, 0, 5)
+dataLabel.Size = UDim2.new(0, 160, 1, 0)
 dataLabel.BackgroundTransparency = 1
-dataLabel.Text = "💰 Data: Loading..."
-dataLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
-dataLabel.TextSize = 28
+dataLabel.Text = "Loading..."
+dataLabel.TextColor3 = C.ACCENT_GREEN
+dataLabel.TextSize = 22
 dataLabel.Font = Enum.Font.GothamBold
 dataLabel.TextXAlignment = Enum.TextXAlignment.Left
-dataLabel.Parent = dataFrame
+dataLabel.Parent = topBar
+
+-- Separator
+local sep1 = Instance.new("Frame")
+sep1.Size = UDim2.new(0, 1, 0, 28)
+sep1.BackgroundColor3 = C.BORDER
+sep1.BackgroundTransparency = 0.5
+sep1.Parent = topBar
+
+-- House display
+local houseIcon = Instance.new("TextLabel")
+houseIcon.Size = UDim2.new(0, 28, 1, 0)
+houseIcon.BackgroundTransparency = 1
+houseIcon.Text = "🏠"
+houseIcon.TextSize = 20
+houseIcon.Font = Enum.Font.GothamBold
+houseIcon.TextColor3 = C.TEXT_WHITE
+houseIcon.Parent = topBar
 
 local houseLabel = Instance.new("TextLabel")
 houseLabel.Name = "HouseLabel"
-houseLabel.Size = UDim2.new(1, -10, 0.3, 0)
-houseLabel.Position = UDim2.new(0, 5, 0.6, 0)
+houseLabel.Size = UDim2.new(0, 130, 1, 0)
 houseLabel.BackgroundTransparency = 1
-houseLabel.Text = "🏠 Shack"
-houseLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-houseLabel.TextSize = 16
+houseLabel.Text = "Shack"
+houseLabel.TextColor3 = C.TEXT_DIM
+houseLabel.TextSize = 18
 houseLabel.Font = Enum.Font.Gotham
 houseLabel.TextXAlignment = Enum.TextXAlignment.Left
-houseLabel.Parent = dataFrame
+houseLabel.Parent = topBar
 
--- Daily reward button (top-left)
-local dailyBtn = Instance.new("TextButton")
-dailyBtn.Name = "DailyRewardBtn"
-dailyBtn.Size = UDim2.new(0, 150, 0, 50)
-dailyBtn.Position = UDim2.new(0, 10, 0, 10)
-dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-dailyBtn.Text = "🎁 Daily Reward"
-dailyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-dailyBtn.TextSize = 16
-dailyBtn.Font = Enum.Font.GothamBold
-dailyBtn.Parent = screenGui
+-- Separator
+local sep2 = Instance.new("Frame")
+sep2.Size = UDim2.new(0, 1, 0, 28)
+sep2.BackgroundColor3 = C.BORDER
+sep2.BackgroundTransparency = 0.5
+sep2.Parent = topBar
 
-local dailyCorner = Instance.new("UICorner")
-dailyCorner.CornerRadius = UDim.new(0, 8)
-dailyCorner.Parent = dailyBtn
+-- DPS display
+local dpsLabel = Instance.new("TextLabel")
+dpsLabel.Name = "DpsLabel"
+dpsLabel.Size = UDim2.new(0, 100, 1, 0)
+dpsLabel.BackgroundTransparency = 1
+dpsLabel.Text = "⚡ 1/s"
+dpsLabel.TextColor3 = C.ACCENT_CYAN
+dpsLabel.TextSize = 16
+dpsLabel.Font = Enum.Font.GothamBold
+dpsLabel.TextXAlignment = Enum.TextXAlignment.Left
+dpsLabel.Parent = topBar
 
--- Collect blocks button (top-left, below daily)
-local collectBtn = Instance.new("TextButton")
-collectBtn.Name = "CollectBtn"
-collectBtn.Size = UDim2.new(0, 150, 0, 40)
-collectBtn.Position = UDim2.new(0, 10, 0, 70)
-collectBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 255)
-collectBtn.Text = "⛏️ Collect Blocks"
-collectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-collectBtn.TextSize = 14
-collectBtn.Font = Enum.Font.GothamBold
-collectBtn.Parent = screenGui
+-- Push remaining buttons to the right
+local spacer = Instance.new("Frame")
+spacer.Size = UDim2.new(1, 0, 1, 0)  -- Takes remaining space
+spacer.BackgroundTransparency = 1
+spacer.Parent = topBar
 
-local collectCorner = Instance.new("UICorner")
-collectCorner.CornerRadius = UDim.new(0, 8)
-collectCorner.Parent = collectBtn
-
--- Stats button (top-left, below collect)
+-- Stats button (top bar, right side)
 local statsBtn = Instance.new("TextButton")
 statsBtn.Name = "StatsBtn"
-statsBtn.Size = UDim2.new(0, 150, 0, 40)
-statsBtn.Position = UDim2.new(0, 10, 0, 120)
-statsBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 120)
+statsBtn.Size = UDim2.new(0, 100, 0, 36)
+statsBtn.BackgroundColor3 = C.BG_CARD
 statsBtn.Text = "📊 Stats"
-statsBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-statsBtn.TextSize = 14
+statsBtn.TextColor3 = C.TEXT_WHITE
+statsBtn.TextSize = 15
 statsBtn.Font = Enum.Font.GothamBold
-statsBtn.Parent = screenGui
+statsBtn.Parent = topBar
+Corner(statsBtn, 8)
+Stroke(statsBtn, C.BORDER, 1)
 
-local statsCorner = Instance.new("UICorner")
-statsCorner.CornerRadius = UDim.new(0, 8)
-statsCorner.Parent = statsBtn
+-- Daily reward button (top bar, right side)
+local dailyBtn = Instance.new("TextButton")
+dailyBtn.Name = "DailyRewardBtn"
+dailyBtn.Size = UDim2.new(0, 140, 0, 36)
+dailyBtn.BackgroundColor3 = C.ACCENT_ORANGE
+dailyBtn.Text = "🎁 Daily Reward"
+dailyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+dailyBtn.TextSize = 15
+dailyBtn.Font = Enum.Font.GothamBold
+dailyBtn.Parent = topBar
+Corner(dailyBtn, 8)
 
--- Notification label (center-top)
+-- ============================================================
+-- LEFT SIDEBAR (action buttons)
+-- ============================================================
+
+local sidebar = Instance.new("Frame")
+sidebar.Name = "Sidebar"
+sidebar.Size = UDim2.new(0, 180, 0, 180)
+sidebar.Position = UDim2.new(0, 16, 0, 72)
+sidebar.BackgroundColor3 = C.BG_CARD
+sidebar.BackgroundTransparency = 0.1
+sidebar.Parent = screenGui
+Corner(sidebar, 12)
+Stroke(sidebar, C.BORDER, 1)
+
+local sidebarLayout = Instance.new("UIListLayout")
+sidebarLayout.FillDirection = Enum.FillDirection.Vertical
+sidebarLayout.Padding = UDim.new(0, 8)
+sidebarLayout.Parent = sidebar
+Padding(sidebar, 12, 12, 12, 12)
+
+-- Collect blocks button
+local collectBtn = Instance.new("TextButton")
+collectBtn.Name = "CollectBtn"
+collectBtn.Size = UDim2.new(1, 0, 0, 44)
+collectBtn.BackgroundColor3 = C.ACCENT_BLUE
+collectBtn.Text = "⛏️  Collect Blocks"
+collectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+collectBtn.TextSize = 15
+collectBtn.Font = Enum.Font.GothamBold
+collectBtn.Parent = sidebar
+Corner(collectBtn, 8)
+
+-- Buy plot button
+local buyPlotBtn = Instance.new("TextButton")
+buyPlotBtn.Name = "BuyPlotBtn"
+buyPlotBtn.Size = UDim2.new(1, 0, 0, 44)
+buyPlotBtn.BackgroundColor3 = C.ACCENT_GREEN
+buyPlotBtn.Text = "📦  Buy Plot [E]"
+buyPlotBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+buyPlotBtn.TextSize = 15
+buyPlotBtn.Font = Enum.Font.GothamBold
+buyPlotBtn.Parent = sidebar
+Corner(buyPlotBtn, 8)
+
+-- Place computer button
+local placeCompBtn = Instance.new("TextButton")
+placeCompBtn.Name = "PlaceCompBtn"
+placeCompBtn.Size = UDim2.new(1, 0, 0, 44)
+placeCompBtn.BackgroundColor3 = C.ACCENT_PURPLE
+placeCompBtn.Text = "💻  Place Computer"
+placeCompBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+placeCompBtn.TextSize = 15
+placeCompBtn.Font = Enum.Font.GothamBold
+placeCompBtn.Parent = sidebar
+Corner(placeCompBtn, 8)
+
+-- ============================================================
+-- NOTIFICATION AREA (center-top, below top bar)
+-- ============================================================
+
 local notifLabel = Instance.new("TextLabel")
 notifLabel.Name = "NotificationLabel"
-notifLabel.Size = UDim2.new(0, 400, 0, 60)
-notifLabel.Position = UDim2.new(0.5, -200, 0, 90)
+notifLabel.Size = UDim2.new(0, 420, 0, 48)
+notifLabel.Position = UDim2.new(0.5, -210, 0, 72)
 notifLabel.BackgroundTransparency = 1
 notifLabel.Text = ""
-notifLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-notifLabel.TextSize = 22
+notifLabel.TextColor3 = C.TEXT_WHITE
+notifLabel.TextSize = 20
 notifLabel.Font = Enum.Font.GothamBold
-notifLabel.TextStrokeTransparency = 0.5
+notifLabel.TextStrokeTransparency = 0.6
 notifLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 notifLabel.TextTransparency = 1
 notifLabel.Parent = screenGui
 
--- Stats panel (center, hidden by default)
+-- ============================================================
+-- STATS PANEL (center, hidden by default)
+-- ============================================================
+
 local statsFrame = Instance.new("Frame")
 statsFrame.Name = "StatsPanel"
-statsFrame.Size = UDim2.new(0, 300, 0, 350)
-statsFrame.Position = UDim2.new(0.5, -150, 0.5, -175)
-statsFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 35)
-statsFrame.BackgroundTransparency = 0.1
+statsFrame.Size = UDim2.new(0, 340, 0, 420)
+statsFrame.Position = UDim2.new(0.5, -170, 0.5, -210)
+statsFrame.BackgroundColor3 = C.BG_DARK
+statsFrame.BackgroundTransparency = 0.05
 statsFrame.Visible = false
 statsFrame.Parent = screenGui
+Corner(statsFrame, 16)
+Stroke(statsFrame, C.BORDER, 1)
 
-local statsFrameCorner = Instance.new("UICorner")
-statsFrameCorner.CornerRadius = UDim.new(0, 12)
-statsFrameCorner.Parent = statsFrame
+-- Title bar
+local statsTitleBar = Instance.new("Frame")
+statsTitleBar.Size = UDim2.new(1, 0, 0, 48)
+statsTitleBar.BackgroundColor3 = C.BG_CARD
+statsTitleBar.Parent = statsFrame
+Corner(statsTitleBar, 16)
+
+-- Fix bottom corners of title bar
+local statsTitleFix = Instance.new("Frame")
+statsTitleFix.Size = UDim2.new(1, 0, 0, 16)
+statsTitleFix.Position = UDim2.new(0, 0, 1, -16)
+statsTitleFix.BackgroundColor3 = C.BG_CARD
+statsTitleFix.BorderSizePixel = 0
+statsTitleFix.Parent = statsTitleBar
 
 local statsTitle = Instance.new("TextLabel")
-statsTitle.Size = UDim2.new(1, 0, 0, 40)
-statsTitle.Position = UDim2.new(0, 0, 0, 5)
+statsTitle.Size = UDim2.new(1, -50, 1, 0)
+statsTitle.Position = UDim2.new(0, 16, 0, 0)
 statsTitle.BackgroundTransparency = 1
-statsTitle.Text = "📊 Your Stats"
-statsTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-statsTitle.TextSize = 24
+statsTitle.Text = "📊  Your Stats"
+statsTitle.TextColor3 = C.TEXT_WHITE
+statsTitle.TextSize = 20
 statsTitle.Font = Enum.Font.GothamBold
-statsTitle.Parent = statsFrame
+statsTitle.TextXAlignment = Enum.TextXAlignment.Left
+statsTitle.Parent = statsTitleBar
 
 local statsClose = Instance.new("TextButton")
-statsClose.Size = UDim2.new(0, 30, 0, 30)
-statsClose.Position = UDim2.new(1, -35, 0, 5)
-statsClose.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
-statsClose.Text = "X"
+statsClose.Size = UDim2.new(0, 32, 0, 32)
+statsClose.Position = UDim2.new(1, -40, 0.5, -16)
+statsClose.BackgroundColor3 = C.ACCENT_RED
+statsClose.Text = "✕"
 statsClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 statsClose.TextSize = 16
 statsClose.Font = Enum.Font.GothamBold
 statsClose.Parent = statsFrame
+Corner(statsClose, 8)
 
-local statsCloseCorner = Instance.new("UICorner")
-statsCloseCorner.CornerRadius = UDim.new(0, 6)
-statsCloseCorner.Parent = statsClose
+-- Stats content
+local statsContent = Instance.new("ScrollingFrame")
+statsContent.Size = UDim2.new(1, -24, 1, -110)
+statsContent.Position = UDim2.new(0, 12, 0, 56)
+statsContent.BackgroundTransparency = 1
+statsContent.ScrollBarThickness = 4
+statsContent.ScrollBarImageColor3 = C.BORDER
+statsContent.CanvasSize = UDim2.new(0, 0, 0, 300)
+statsContent.Parent = statsFrame
 
--- Stats text
-local statsText = Instance.new("TextLabel")
-statsText.Name = "StatsText"
-statsText.Size = UDim2.new(1, -20, 1, -50)
-statsText.Position = UDim2.new(0, 10, 0, 45)
-statsText.BackgroundTransparency = 1
-statsText.Text = "Loading..."
-statsText.TextColor3 = Color3.fromRGB(200, 200, 200)
-statsText.TextSize = 16
-statsText.Font = Enum.Font.Gotham
-statsText.TextXAlignment = Enum.TextXAlignment.Left
-statsText.TextYAlignment = Enum.TextYAlignment.Top
-statsText.TextWrapped = true
-statsText.Parent = statsFrame
+local statsLayout = Instance.new("UIListLayout")
+statsLayout.Padding = UDim.new(0, 6)
+statsLayout.Parent = statsContent
+Padding(statsContent, 0, 0, 0, 0)
 
--- House upgrade button (inside stats panel)
+-- We'll populate these dynamically
+local statsEntries = {}
+
+local function CreateStatRow(label, value, icon, color)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, 0, 0, 36)
+    row.BackgroundColor3 = C.BG_CARD
+    row.BackgroundTransparency = 0.3
+    row.Parent = statsContent
+    Corner(row, 8)
+    
+    local iconLabel = Instance.new("TextLabel")
+    iconLabel.Size = UDim2.new(0, 30, 1, 0)
+    iconLabel.Position = UDim2.new(0, 8, 0, 0)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Text = icon or ""
+    iconLabel.TextSize = 18
+    iconLabel.Font = Enum.Font.GothamBold
+    iconLabel.TextColor3 = C.TEXT_WHITE
+    iconLabel.Parent = row
+    
+    local nameLabel = Instance.new("TextLabel")
+    nameLabel.Size = UDim2.new(0.55, -30, 1, 0)
+    nameLabel.Position = UDim2.new(0, 38, 0, 0)
+    nameLabel.BackgroundTransparency = 1
+    nameLabel.Text = label
+    nameLabel.TextColor3 = C.TEXT_DIM
+    nameLabel.TextSize = 15
+    nameLabel.Font = Enum.Font.Gotham
+    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    nameLabel.Parent = row
+    
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Name = "Value"
+    valueLabel.Size = UDim2.new(0.45, -8, 1, 0)
+    valueLabel.Position = UDim2.new(0.55, 0, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Text = value or "0"
+    valueLabel.TextColor3 = color or C.TEXT_WHITE
+    valueLabel.TextSize = 16
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = row
+    
+    return valueLabel
+end
+
+-- Create stat rows
+local statHouseVal  = CreateStatRow("House Tier", "Shack", "🏠", C.ACCENT_ORANGE)
+local statPlotsVal  = CreateStatRow("Plots Owned", "0", "📦", C.ACCENT_GREEN)
+local statCompVal   = CreateStatRow("Computers", "0", "💻", C.ACCENT_BLUE)
+local statBlocksVal = CreateStatRow("Blocks Collected", "0", "⛏️", C.ACCENT_CYAN)
+local statDataVal   = CreateStatRow("Current Data", "0", "💰", C.ACCENT_GREEN)
+local statEarnedVal = CreateStatRow("Total Earned", "0", "📈", C.TEXT_DIM)
+local statSpentVal  = CreateStatRow("Total Spent", "0", "💸", C.TEXT_DIM)
+local statDpsVal    = CreateStatRow("Data / Second", "1", "⚡", C.ACCENT_CYAN)
+
+-- Upgrade house button (bottom of stats panel)
 local upgradeHouseBtn = Instance.new("TextButton")
 upgradeHouseBtn.Name = "UpgradeHouseBtn"
-upgradeHouseBtn.Size = UDim2.new(0.8, 0, 0, 35)
-upgradeHouseBtn.Position = UDim2.new(0.1, 0, 1, -40)
-upgradeHouseBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
-upgradeHouseBtn.Text = "🏠 Upgrade House"
+upgradeHouseBtn.Size = UDim2.new(1, -24, 0, 44)
+upgradeHouseBtn.Position = UDim2.new(0, 12, 1, -52)
+upgradeHouseBtn.BackgroundColor3 = C.ACCENT_PURPLE
+upgradeHouseBtn.Text = "🏠  Upgrade House"
 upgradeHouseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-upgradeHouseBtn.TextSize = 14
+upgradeHouseBtn.TextSize = 16
 upgradeHouseBtn.Font = Enum.Font.GothamBold
 upgradeHouseBtn.Parent = statsFrame
+Corner(upgradeHouseBtn, 10)
 
-local upgradeCorner = Instance.new("UICorner")
-upgradeCorner.CornerRadius = UDim.new(0, 8)
-upgradeCorner.Parent = upgradeHouseBtn
-
--- === FUNCTIONS ===
+-- ============================================================
+-- FUNCTIONS
+-- ============================================================
 
 local function UpdateDataDisplay(amount)
-    dataLabel.Text = "💰 Data: " .. tostring(amount)
-    dataLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
-    task.delay(0.2, function()
+    dataLabel.Text = tostring(amount)
+    dataLabel.TextColor3 = Color3.fromRGB(100, 255, 150)
+    task.delay(0.15, function()
         if dataLabel and dataLabel.Parent then
-            dataLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+            dataLabel.TextColor3 = C.ACCENT_GREEN
         end
     end)
 end
 
 local function ShowNotification(message, color)
     notifLabel.Text = message
-    notifLabel.TextColor3 = color or Color3.fromRGB(255, 255, 255)
+    notifLabel.TextColor3 = color or C.TEXT_WHITE
     notifLabel.TextTransparency = 1
     
-    for i = 0, 1, 0.1 do
-        if notifLabel and notifLabel.Parent then
-            notifLabel.TextTransparency = 1 - i
-        end
-        task.wait(0.03)
-    end
-    
-    task.delay(2, function()
-        for i = 0, 1, 0.1 do
+    task.spawn(function()
+        for i = 0, 1, 0.12 do
             if notifLabel and notifLabel.Parent then
-                notifLabel.TextTransparency = i
+                notifLabel.TextTransparency = 1 - i
             end
-            task.wait(0.03)
+            task.wait(0.025)
         end
+        task.delay(1.8, function()
+            for i = 0, 1, 0.08 do
+                if notifLabel and notifLabel.Parent then
+                    notifLabel.TextTransparency = i
+                end
+                task.wait(0.025)
+            end
+        end)
     end)
 end
 
 local function UpdateStatsPanel()
     local success, data = pcall(function()
-        local Events = ReplicatedStorage:FindFirstChild("Events")
-        if Events then
-            local getFn = Events:FindFirstChild("GetPlayerData")
-            if getFn then
-                return getFn:InvokeServer()
-            end
+        local Ev = ReplicatedStorage:FindFirstChild("Events")
+        if Ev then
+            local fn = Ev:FindFirstChild("GetPlayerData")
+            if fn then return fn:InvokeServer() end
         end
         return nil
     end)
@@ -238,53 +444,47 @@ local function UpdateStatsPanel()
         local houseNames = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
         local houseName = houseNames[data.HouseTier] or "Shack"
         local plotCount = data.Plots and #data.Plots or 0
-        local computerCount = data.Computers and #data.Computers or 0
-        local blocksCollected = data.BlocksCollected or 0
+        local compCount = data.Computers and #data.Computers or 0
+        local blocks = data.BlocksCollected or 0
         
-        local totalDPS = 1  -- Base passive
+        local totalDPS = 1
         if data.Computers then
-            local dpsValues = {2, 8, 30, 120}
-            for _, comp in ipairs(data.Computers) do
-                totalDPS = totalDPS + (dpsValues[comp.tier] or 0)
+            local dpsVals = {2, 8, 30, 120}
+            for _, c in ipairs(data.Computers) do
+                totalDPS = totalDPS + (dpsVals[c.tier] or 0)
             end
         end
         
-        statsText.Text = string.format(
-            "🏠 House: %s (Tier %d)\n\n"..
-            "📦 Plots Owned: %d\n"..
-            "💻 Computers: %d\n"..
-            "⛏️ Blocks Collected: %d\n\n"..
-            "💰 Current Data: %d\n"..
-            "📈 Total Earned: %d\n"..
-            "💸 Total Spent: %d\n"..
-            "⚡ Data/sec: %d",
-            houseName, data.HouseTier,
-            plotCount,
-            computerCount,
-            blocksCollected,
-            data.Data,
-            data.TotalEarned or 0,
-            data.TotalSpent or 0,
-            totalDPS
-        )
+        statHouseVal.Text = houseName .. " (T" .. data.HouseTier .. ")"
+        statPlotsVal.Text = tostring(plotCount)
+        statCompVal.Text = tostring(compCount)
+        statBlocksVal.Text = tostring(blocks)
+        statDataVal.Text = tostring(data.Data)
+        statEarnedVal.Text = tostring(data.TotalEarned or 0)
+        statSpentVal.Text = tostring(data.TotalSpent or 0)
+        statDpsVal.Text = tostring(totalDPS) .. "/s"
         
-        -- Update upgrade button
+        -- Update DPS in top bar too
+        dpsLabel.Text = "⚡ " .. totalDPS .. "/s"
+        
+        -- Upgrade button
         local nextTier = data.HouseTier + 1
         local houseCosts = {0, 200, 1000, 5000, 25000}
-        local houseMaxComputers = {1, 2, 4, 8, 16}
         if nextTier <= 5 then
-            upgradeHouseBtn.Text = "🏠 Upgrade: " .. houseNames[nextTier] .. " (" .. houseCosts[nextTier] .. " Data)"
-            upgradeHouseBtn.BackgroundColor3 = Color3.fromRGB(100, 50, 200)
+            upgradeHouseBtn.Text = "🏠  " .. houseNames[nextTier] .. "  —  " .. houseCosts[nextTier] .. " Data"
+            upgradeHouseBtn.BackgroundColor3 = C.ACCENT_PURPLE
         else
-            upgradeHouseBtn.Text = "✅ Max House Level!"
-            upgradeHouseBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            upgradeHouseBtn.Text = "✅  Max Level Reached"
+            upgradeHouseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
         end
     else
-        statsText.Text = "Could not load stats.\nTry again later."
+        statDataVal.Text = "Error"
     end
 end
 
--- === LEADERSTATS ===
+-- ============================================================
+-- LEADERSTATS
+-- ============================================================
 
 print("DataTycoon: Waiting for leaderstats...")
 
@@ -297,7 +497,7 @@ end
 
 if not leaderstats then
     warn("DataTycoon: No leaderstats!")
-    dataLabel.Text = "💰 Data: Error"
+    dataLabel.Text = "Error"
 else
     print("DataTycoon: leaderstats found!")
     
@@ -312,14 +512,16 @@ else
     local houseValue = leaderstats:FindFirstChild("House")
     if houseValue then
         local houseNames = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
-        houseLabel.Text = "🏠 " .. (houseNames[houseValue.Value] or "Shack")
+        houseLabel.Text = houseNames[houseValue.Value] or "Shack"
         houseValue.Changed:Connect(function(newTier)
-            houseLabel.Text = "🏠 " .. (houseNames[newTier] or "Shack")
+            houseLabel.Text = houseNames[newTier] or "Shack"
         end)
     end
 end
 
--- === EVENT CONNECTIONS ===
+-- ============================================================
+-- EVENT CONNECTIONS
+-- ============================================================
 
 task.spawn(function()
     print("DataTycoon: Waiting for Events...")
@@ -332,7 +534,6 @@ task.spawn(function()
     
     print("DataTycoon: Events found!")
     
-    -- Daily reward
     local claimEvent = Events:WaitForChild("ClaimDailyReward", 15)
     local claimedEvent = Events:WaitForChild("DailyRewardClaimed", 15)
     local notifEvent = Events:WaitForChild("Notification", 15)
@@ -342,49 +543,71 @@ task.spawn(function()
     local computerPlacedEvent = Events:WaitForChild("ComputerPlaced", 15)
     local houseUpgradedEvent = Events:WaitForChild("HouseUpgraded", 15)
     local upgradeHouseEvent = Events:WaitForChild("UpgradeHouse", 15)
+    local placeComputerEvent = Events:WaitForChild("PlaceComputer", 15)
+    local collectBlockEvent = Events:FindFirstChild("CollectBlock")
     
     -- Daily reward
     if claimEvent and claimedEvent then
         dailyBtn.MouseButton1Click:Connect(function()
-            print("DataTycoon: Claiming daily reward...")
             claimEvent:FireServer()
         end)
-        
         claimedEvent.OnClientEvent:Connect(function(reward, streak)
-            ShowNotification("Day " .. streak .. ": +" .. reward .. " Data!", Color3.fromRGB(100, 255, 100))
+            ShowNotification("Day " .. streak .. ": +" .. reward .. " Data!", Color3.fromRGB(100, 255, 150))
             dailyBtn.Text = "✅ Claimed!"
-            dailyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+            dailyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 80)
             task.delay(2, function()
                 if dailyBtn and dailyBtn.Parent then
                     dailyBtn.Text = "🎁 Daily Reward"
-                    dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                    dailyBtn.BackgroundColor3 = C.ACCENT_ORANGE
                 end
             end)
         end)
-        print("DataTycoon: Daily reward connected!")
+        print("DataTycoon: Daily reward connected")
     end
     
-    -- Collect blocks
+    -- Collect blocks button
     if collectEvent then
         collectBtn.MouseButton1Click:Connect(function()
-            print("DataTycoon: Collecting blocks...")
             collectEvent:FireServer(1)
         end)
-        print("DataTycoon: Collect blocks connected!")
+        print("DataTycoon: Collect blocks connected")
+    end
+    
+    -- Buy plot button + E key
+    if purchasePlotEvent then
+        local function BuyPlot()
+            purchasePlotEvent:FireServer("plot_0_0")
+        end
+        buyPlotBtn.MouseButton1Click:Connect(BuyPlot)
+        UserInputService.InputBegan:Connect(function(input, gp)
+            if gp then return end
+            if input.KeyCode == Enum.KeyCode.E then
+                BuyPlot()
+            end
+        end)
+        print("DataTycoon: Buy plot connected")
+    end
+    
+    -- Place computer button
+    if placeComputerEvent then
+        placeCompBtn.MouseButton1Click:Connect(function()
+            placeComputerEvent:FireServer("plot_0_0", 1)
+        end)
+        print("DataTycoon: Place computer connected")
     end
     
     -- Notifications
     if notifEvent then
         notifEvent.OnClientEvent:Connect(function(message, notifType)
-            local color = Color3.fromRGB(255, 255, 255)
-            if notifType == "success" then color = Color3.fromRGB(100, 255, 100)
+            local color = C.TEXT_WHITE
+            if notifType == "success" then color = Color3.fromRGB(100, 255, 150)
             elseif notifType == "error" then color = Color3.fromRGB(255, 100, 100)
             end
             ShowNotification(message, color)
         end)
     end
     
-    -- Plot purchased (other players)
+    -- Plot purchased
     if plotPurchasedEvent then
         plotPurchasedEvent.OnClientEvent:Connect(function(plotId, ownerId, ownerName)
             if ownerId ~= player.UserId then
@@ -396,50 +619,47 @@ task.spawn(function()
     -- Computer placed
     if computerPlacedEvent then
         computerPlacedEvent.OnClientEvent:Connect(function(plotId, tier, name)
-            ShowNotification(name .. " placed!", Color3.fromRGB(100, 200, 255))
+            ShowNotification(name .. " placed!", C.ACCENT_BLUE)
         end)
     end
     
     -- House upgraded
     if houseUpgradedEvent then
         houseUpgradedEvent.OnClientEvent:Connect(function(tier, name)
-            ShowNotification("Upgraded to " .. name .. "!", Color3.fromRGB(200, 100, 255))
+            ShowNotification("Upgraded to " .. name .. "!", C.ACCENT_PURPLE)
         end)
     end
     
     -- House upgrade button
     if upgradeHouseEvent then
         upgradeHouseBtn.MouseButton1Click:Connect(function()
-            print("DataTycoon: Upgrading house...")
             upgradeHouseEvent:FireServer()
         end)
-        print("DataTycoon: House upgrade connected!")
+        print("DataTycoon: House upgrade connected")
     end
     
     -- Stats panel
     statsBtn.MouseButton1Click:Connect(function()
-        statsFrame.Visible = true
-        UpdateStatsPanel()
+        statsFrame.Visible = not statsFrame.Visible
+        if statsFrame.Visible then
+            UpdateStatsPanel()
+        end
     end)
-    
     statsClose.MouseButton1Click:Connect(function()
         statsFrame.Visible = false
     end)
     
     -- Collectible blocks (ProximityPrompt)
-    local collectBlockEvent = Events:FindFirstChild("CollectBlock")
     if collectBlockEvent then
         local function SetupBlockPrompt(block)
             if not block:IsA("BasePart") then return end
             local prompt = block:FindFirstChildOfClass("ProximityPrompt")
             if prompt then
                 prompt.Triggered:Connect(function()
-                    print("DataTycoon: Block collected!")
                     collectBlockEvent:FireServer()
                 end)
             end
         end
-        
         local blockFolder = workspace:WaitForChild("CollectibleBlocks", 10)
         if blockFolder then
             for _, block in ipairs(blockFolder:GetChildren()) do
@@ -449,20 +669,9 @@ task.spawn(function()
                 task.wait(0.2)
                 SetupBlockPrompt(child)
             end)
-            print("DataTycoon: Block collection connected!")
+            print("DataTycoon: Block collection connected")
         end
     end
-    
-    -- Purchase plot on click (E key)
-    UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if gameProcessed then return end
-        if input.KeyCode == Enum.KeyCode.E then
-            if purchasePlotEvent then
-                print("DataTycoon: Trying to buy plot_0_0...")
-                purchasePlotEvent:FireServer("plot_0_0")
-            end
-        end
-    end)
     
     print("DataTycoon: All events connected!")
 end)
