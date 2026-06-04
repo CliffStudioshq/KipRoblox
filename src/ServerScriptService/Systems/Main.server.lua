@@ -1,12 +1,10 @@
 --[[
     Main.server.lua — DataTycoon Server
-    v0.2 — Research-driven redesign
-    Key changes:
-    - Faster early progression (first upgrade in <30 seconds)
-    - Visual feedback on every action
-    - Offline income system
-    - Daily rewards
-    - Better leaderstats
+    v0.3 — Bug fixes: race condition on GetPlayerData, debug logging
+    Fixes:
+    - GetPlayerData now waits for player data to be loaded
+    - Added debug prints for daily reward flow
+    - Safer nil checks throughout
 ]]
 
 local Players = game:GetService("Players")
@@ -58,13 +56,12 @@ local GetLeaderboard = CreateEvent("GetLeaderboard", "RemoteFunction")
 -- === CONFIGURATION ===
 local CONFIG = {
     STARTING_DATA = 50,
-    BLOCK_REWARD = 5,           -- Data per block collected
+    BLOCK_REWARD = 5,
     BASE_PLOT_PRICE = 25,
     PLOT_PRICE_MULTIPLIER = 1.3,
     MAX_PLOTS = 16,
     PLOT_SIZE = 32,
     
-    -- Computer tiers: {name, cost, dataPerSecond, slots}
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,  dps = 1,   slots = 1},
         {name = "Gaming PC",     cost = 500,  dps = 5,   slots = 2},
@@ -72,7 +69,6 @@ local CONFIG = {
         {name = "Supercomputer", cost = 10000,dps = 100, slots = 8},
     },
     
-    -- House tiers: {name, cost, maxComputers}
     HOUSE_TIERS = {
         {name = "Shack",         cost = 0,    maxComputers = 1},
         {name = "Small House",   cost = 200,  maxComputers = 2},
@@ -81,12 +77,12 @@ local CONFIG = {
         {name = "Mega Compound", cost = 25000,maxComputers = 16},
     },
     
-    -- Daily rewards (day 1-7, then repeats with bonus)
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
 }
 
 -- === PLAYER DATA ===
 local PlayerData = {}
+local DataLoaded = {}  -- Track which players have finished loading
 
 local DEFAULT_DATA = {
     Data = CONFIG.STARTING_DATA,
@@ -117,10 +113,16 @@ local function LoadPlayerData(player)
             end
         end
         PlayerData[player.UserId] = data
+        print("DataTycoon: Loaded saved data for " .. player.Name .. " (Data: " .. data.Data .. ")")
     else
         PlayerData[player.UserId] = {}
         for k, v in pairs(DEFAULT_DATA) do
             PlayerData[player.UserId][k] = v
+        end
+        if not success then
+            warn("DataTycoon: DataStore load failed for " .. player.Name .. ", using defaults")
+        else
+            print("DataTycoon: New player " .. player.Name .. " (starting Data: " .. CONFIG.STARTING_DATA .. ")")
         end
     end
     
@@ -136,12 +138,11 @@ local function LoadPlayerData(player)
         end
     end
     
-    if timeAway > 60 and totalDPS > 0 then  -- Only if away for >1 minute
-        local offlineEarnings = math.floor(totalDPS * timeAway * 0.5)  -- 50% efficiency offline
+    if timeAway > 60 and totalDPS > 0 then
+        local offlineEarnings = math.floor(totalDPS * timeAway * 0.5)
         if offlineEarnings > 0 then
             PlayerData[player.UserId].Data = PlayerData[player.UserId].Data + offlineEarnings
             PlayerData[player.UserId].TotalEarned = PlayerData[player.UserId].TotalEarned + offlineEarnings
-            -- Notify client about offline income
             task.delay(3, function()
                 if player and player.Parent then
                     OfflineIncome:FireClient(player, offlineEarnings, timeAway)
@@ -153,15 +154,21 @@ local function LoadPlayerData(player)
     PlayerData[player.UserId].LastLogin = now
     
     SetupLeaderstats(player)
+    DataLoaded[player.UserId] = true  -- Mark as loaded
     return PlayerData[player.UserId]
 end
 
 local function SavePlayerData(player)
     if not PlayerData[player.UserId] then return end
     local key = "Player_" .. player.UserId
-    pcall(function()
+    local success = pcall(function()
         DataStore:SetAsync(key, PlayerData[player.UserId])
     end)
+    if success then
+        print("DataTycoon: Saved data for " .. player.Name)
+    else
+        warn("DataTycoon: Failed to save data for " .. player.Name)
+    end
 end
 
 local function SetupLeaderstats(player)
@@ -220,7 +227,7 @@ end
 -- === COMPUTER MINING SYSTEM ===
 local function StartMiningSystem()
     while true do
-        task.wait(1)  -- Every second
+        task.wait(1)
         for _, player in ipairs(Players:GetPlayers()) do
             local data = PlayerData[player.UserId]
             if data and data.Computers then
@@ -293,12 +300,19 @@ CollectBlocks.OnServerEvent:Connect(function(player, blockCount)
 end)
 
 ClaimDailyReward.OnServerEvent:Connect(function(player)
+    print("DataTycoon: ClaimDailyReward received from " .. player.Name)
+    
     local data = PlayerData[player.UserId]
-    if not data then return end
+    if not data then
+        warn("DataTycoon: No player data for " .. player.Name .. " on daily reward!")
+        return
+    end
     
     local now = os.time()
     local lastClaim = data.LastDailyReward or 0
     local daysSinceLast = math.floor((now - lastClaim) / 86400)
+    
+    print("DataTycoon: " .. player.Name .. " daysSinceLast=" .. daysSinceLast .. " streak=" .. (data.DailyStreak or 0))
     
     if daysSinceLast == 0 then
         Notification:FireClient(player, "Already claimed today!", "error")
@@ -306,7 +320,7 @@ ClaimDailyReward.OnServerEvent:Connect(function(player)
     end
     
     if daysSinceLast > 1 then
-        data.DailyStreak = 1  -- Reset streak
+        data.DailyStreak = 1
     else
         data.DailyStreak = (data.DailyStreak or 0) + 1
     end
@@ -321,12 +335,28 @@ ClaimDailyReward.OnServerEvent:Connect(function(player)
     UpdateDataDisplay(player, data.Data)
     DailyRewardClaimed:FireClient(player, reward, data.DailyStreak)
     Notification:FireClient(player, "Day " .. data.DailyStreak .. " reward: +" .. reward .. " Data!", "success")
+    print("DataTycoon: " .. player.Name .. " claimed day " .. data.DailyStreak .. " reward: " .. reward)
 end)
 
 -- === REMOTE FUNCTION HANDLERS ===
 
 GetPlayerData.OnServerInvoke = function(player)
-    return PlayerData[player.UserId]
+    print("DataTycoon: GetPlayerData invoked by " .. player.Name .. " (loaded: " .. tostring(DataLoaded[player.UserId]) .. ")")
+    
+    -- Wait up to 5 seconds for data to be loaded
+    local attempts = 0
+    while not DataLoaded[player.UserId] and attempts < 50 do
+        task.wait(0.1)
+        attempts = attempts + 1
+    end
+    
+    local data = PlayerData[player.UserId]
+    if data then
+        print("DataTycoon: Returning data for " .. player.Name .. " (Data: " .. data.Data .. ")")
+    else
+        warn("DataTycoon: No data available for " .. player.Name .. " after waiting!")
+    end
+    return data
 end
 
 GetPlotInfo.OnServerInvoke = function(player, plotId)
@@ -354,12 +384,13 @@ end
 
 Players.PlayerAdded:Connect(function(player)
     LoadPlayerData(player)
-    print("DataTycoon: " .. player.Name .. " joined!")
+    print("DataTycoon: " .. player.Name .. " joined! (Data loaded: " .. tostring(DataLoaded[player.UserId]) .. ")")
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     SavePlayerData(player)
     PlayerData[player.UserId] = nil
+    DataLoaded[player.UserId] = nil
 end)
 
 game:BindToClose(function()
@@ -372,4 +403,4 @@ end)
 InitPlots()
 task.spawn(StartMiningSystem)
 
-print("DataTycoon v0.2 server ready!")
+print("DataTycoon v0.3 server ready!")

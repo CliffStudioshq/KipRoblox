@@ -1,23 +1,44 @@
 --[[
     GameClient.client.lua — DataTycoon Client
-    v0.2 — Research-driven redesign
-    Key changes:
-    - Better HUD with progress indicators
-    - Offline income popup
-    - Daily reward button
-    - Notification system
-    - Leaderboard UI
+    v0.3 — Bug fixes: Data loading retry, Daily reward ready check
+    Fixes:
+    - Data display: retry InvokeServer up to 5x, fallback to leaderstats
+    - Daily reward: wait for all RemoteEvents before enabling button
+    - Added debug prints so we can see what's happening
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService = game:GetService("TweenService")
-local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local Events = ReplicatedStorage:WaitForChild("Events")
+-- Wait for server to create all RemoteEvents
+print("DataTycoon: Waiting for RemoteEvents...")
+local Events = ReplicatedStorage:WaitForChild("Events", 15)
+if not Events then
+    warn("DataTycoon: FAILED to find Events folder!")
+    return
+end
+
+-- Wait for specific events we need
+local dataUpdated = Events:WaitForChild("DataUpdated", 10)
+local getPlayerData = Events:WaitForChild("GetPlayerData", 10)
+local claimDailyReward = Events:WaitForChild("ClaimDailyReward", 10)
+local dailyRewardClaimed = Events:WaitForChild("DailyRewardClaimed", 10)
+local notification = Events:WaitForChild("Notification", 10)
+local offlineIncome = Events:WaitForChild("OfflineIncome", 10)
+
+if not (dataUpdated and getPlayerData and claimDailyReward and dailyRewardClaimed) then
+    warn("DataTycoon: Some RemoteEvents missing!")
+    warn("  DataUpdated:", dataUpdated ~= nil)
+    warn("  GetPlayerData:", getPlayerData ~= nil)
+    warn("  ClaimDailyReward:", claimDailyReward ~= nil)
+    warn("  DailyRewardClaimed:", dailyRewardClaimed ~= nil)
+end
+
+print("DataTycoon: All RemoteEvents found!")
 
 -- === UI SETUP ===
 
@@ -88,8 +109,8 @@ local dailyBtn = Instance.new("TextButton")
 dailyBtn.Name = "DailyRewardBtn"
 dailyBtn.Size = UDim2.new(0, 150, 0, 50)
 dailyBtn.Position = UDim2.new(0, 10, 0, 10)
-dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-dailyBtn.Text = "🎁 Daily Reward"
+dailyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+dailyBtn.Text = "🎁 Loading..."
 dailyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 dailyBtn.TextSize = 16
 dailyBtn.Font = Enum.Font.GothamBold
@@ -151,7 +172,9 @@ local function UpdateDataDisplay(amount)
     -- Flash effect
     dataLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
     task.delay(0.2, function()
-        dataLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+        if dataLabel and dataLabel.Parent then
+            dataLabel.TextColor3 = Color3.fromRGB(0, 255, 100)
+        end
     end)
 end
 
@@ -172,62 +195,131 @@ local function ShowNotification(message, notifType)
     tween:Play()
     
     task.delay(2.5, function()
-        local tweenOut = TweenService:Create(notifLabel, TweenInfo.new(0.5), {TextTransparency = 1})
-        tweenOut:Play()
+        if notifLabel and notifLabel.Parent then
+            local tweenOut = TweenService:Create(notifLabel, TweenInfo.new(0.5), {TextTransparency = 1})
+            tweenOut:Play()
+        end
     end)
 end
 
+-- === INITIAL DATA LOAD (with retries) ===
+
+print("DataTycoon: Starting data load...")
+
+local loadedData = false
+
+-- Try InvokeServer up to 5 times
+for attempt = 1, 5 do
+    local success, data = pcall(function()
+        return getPlayerData:InvokeServer()
+    end)
+    
+    print("DataTycoon: Data load attempt " .. attempt .. " - success:", success, "data:", data ~= nil)
+    
+    if success and data then
+        UpdateDataDisplay(data.Data)
+        local houseTier = data.HouseTier or 1
+        local houseNames = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
+        houseLabel.Text = "🏠 " .. (houseNames[houseTier] or "Shack")
+        print("DataTycoon: Client loaded! Data: " .. data.Data .. " House: " .. houseTier)
+        loadedData = true
+        break
+    end
+    
+    if attempt < 5 then
+        task.wait(1)  -- Wait 1 second between retries
+    end
+end
+
+-- Fallback: read from leaderstats if InvokeServer failed
+if not loadedData then
+    print("DataTycoon: InvokeServer failed, trying leaderstats fallback...")
+    task.wait(1)
+    
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if leaderstats then
+        local dataValue = leaderstats:FindFirstChild("Data")
+        if dataValue then
+            UpdateDataDisplay(dataValue.Value)
+            print("DataTycoon: Got data from leaderstats: " .. dataValue.Value)
+            loadedData = true
+        end
+    end
+end
+
+-- Last resort: show 0
+if not loadedData then
+    warn("DataTycoon: Could not load data from any source!")
+    UpdateDataDisplay(0)
+end
+
+-- === ENABLE DAILY REWARD BUTTON ===
+
+dailyBtn.Text = "🎁 Daily Reward"
+dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+print("DataTycoon: Daily reward button enabled!")
+
 -- === EVENT CONNECTIONS ===
 
-Events.DataUpdated.OnClientEvent:Connect(function(newAmount)
+dataUpdated.OnClientEvent:Connect(function(newAmount)
     UpdateDataDisplay(newAmount)
 end)
 
-Events.Notification.OnClientEvent:Connect(function(message, notifType)
-    ShowNotification(message, notifType)
-end)
+if notification then
+    notification.OnClientEvent:Connect(function(message, notifType)
+        ShowNotification(message, notifType)
+    end)
+end
 
-Events.OfflineIncome.OnClientEvent:Connect(function(amount, timeAway)
-    offlineAmount.Text = "+" .. amount .. " Data"
-    offlineTitle.Text = "💤 You were away for " .. math.floor(timeAway / 60) .. " minutes!"
-    offlineFrame.Visible = true
-end)
+if offlineIncome then
+    offlineIncome.OnClientEvent:Connect(function(amount, timeAway)
+        offlineAmount.Text = "+" .. amount .. " Data"
+        offlineTitle.Text = "💤 You were away for " .. math.floor(timeAway / 60) .. " minutes!"
+        offlineFrame.Visible = true
+    end)
+end
 
 offlineClose.MouseButton1Click:Connect(function()
     offlineFrame.Visible = false
 end)
 
 dailyBtn.MouseButton1Click:Connect(function()
-    Events.ClaimDailyReward:FireServer()
+    print("DataTycoon: Daily reward clicked!")
+    if claimDailyReward then
+        claimDailyReward:FireServer()
+        print("DataTycoon: Fired ClaimDailyReward")
+    else
+        warn("DataTycoon: ClaimDailyReward event not found!")
+    end
 end)
 
-Events.DailyRewardClaimed.OnClientEvent:Connect(function(reward, streak)
-    ShowNotification("Day " .. streak .. " reward: +" .. reward .. " Data!", "success")
-    dailyBtn.Text = "✅ Claimed!"
-    dailyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-    task.delay(2, function()
-        dailyBtn.Text = "🎁 Daily Reward"
-        dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+if dailyRewardClaimed then
+    dailyRewardClaimed.OnClientEvent:Connect(function(reward, streak)
+        ShowNotification("Day " .. streak .. " reward: +" .. reward .. " Data!", "success")
+        dailyBtn.Text = "✅ Claimed!"
+        dailyBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+        task.delay(2, function()
+            if dailyBtn and dailyBtn.Parent then
+                dailyBtn.Text = "🎁 Daily Reward"
+                dailyBtn.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+            end
+        end)
     end)
-end)
-
--- === INITIAL DATA LOAD ===
-
-task.wait(2)
-
-local success, data = pcall(function()
-    return Events.GetPlayerData:InvokeServer()
-end)
-
-if success and data then
-    UpdateDataDisplay(data.Data)
-    local houseTier = data.HouseTier or 1
-    local houseNames = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
-    houseLabel.Text = "🏠 " .. (houseNames[houseTier] or "Shack")
-    print("DataTycoon: Client loaded! Data: " .. data.Data)
-else
-    warn("DataTycoon: Failed to load player data")
-    UpdateDataDisplay(0)
 end
+
+-- Also update from leaderstats changes as a backup
+task.spawn(function()
+    task.wait(3)  -- Give initial load a head start
+    local leaderstats = player:FindFirstChild("leaderstats")
+    if leaderstats then
+        local dataValue = leaderstats:FindFirstChild("Data")
+        if dataValue then
+            dataValue.Changed:Connect(function(newValue)
+                UpdateDataDisplay(newValue)
+            end)
+            print("DataTycoon: Connected to leaderstats Data.Changed")
+        end
+    end
+end)
 
 print("DataTycoon: Client ready!")
