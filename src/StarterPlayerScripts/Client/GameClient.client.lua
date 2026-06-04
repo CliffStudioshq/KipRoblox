@@ -1,6 +1,6 @@
 --[[
     GameClient.client.lua — DataTycoon Client
-    v0.10 — Fixed data tracking, cleaner GUI
+    v0.17 — Clean rewrite: simple data tracking, reliable buttons, orb touch
 ]]
 
 local Players = game:GetService("Players")
@@ -12,6 +12,9 @@ local playerGui = player:WaitForChild("PlayerGui")
 
 print("DataTycoon: Client starting...")
 
+-- ============================================================
+-- COLORS
+-- ============================================================
 local C = {
     BG_DARK      = Color3.fromRGB(12, 12, 22),
     BG_CARD      = Color3.fromRGB(20, 20, 38),
@@ -34,14 +37,18 @@ local function Corner(p, r)
     return c
 end
 
--- === SCREEN GUI ===
+-- ============================================================
+-- SCREEN GUI
+-- ============================================================
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DataTycoonHUD"
 screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = playerGui
 
--- === DATA BAR (top-center floating pill) ===
+-- ============================================================
+-- DATA BAR (top-center floating pill)
+-- ============================================================
 local dataBar = Instance.new("Frame")
 dataBar.Size = UDim2.new(0, 380, 0, 44)
 dataBar.Position = UDim2.new(0.5, -190, 0, 12)
@@ -49,6 +56,7 @@ dataBar.BackgroundColor3 = C.BG_DARK
 dataBar.BackgroundTransparency = 0.08
 dataBar.Parent = screenGui
 Corner(dataBar, 22)
+
 local dataBarStroke = Instance.new("UIStroke")
 dataBarStroke.Color = C.BORDER
 dataBarStroke.Thickness = 1
@@ -59,6 +67,7 @@ dataBarLayout.FillDirection = Enum.FillDirection.Horizontal
 dataBarLayout.VerticalAlignment = Enum.VerticalAlignment.Center
 dataBarLayout.Padding = UDim.new(0, 0)
 dataBarLayout.Parent = dataBar
+
 local dataBarPad = Instance.new("UIPadding")
 dataBarPad.PaddingLeft = UDim.new(0, 16)
 dataBarPad.PaddingRight = UDim.new(0, 16)
@@ -67,7 +76,7 @@ dataBarPad.Parent = dataBar
 local dataLabel = Instance.new("TextLabel")
 dataLabel.Size = UDim2.new(0, 130, 1, 0)
 dataLabel.BackgroundTransparency = 1
-dataLabel.Text = "💰  50"
+dataLabel.Text = "💰  --"
 dataLabel.TextColor3 = C.ACCENT_GREEN
 dataLabel.TextSize = 18
 dataLabel.Font = Enum.Font.GothamBold
@@ -83,7 +92,7 @@ sep1.Parent = dataBar
 local houseLabel = Instance.new("TextLabel")
 houseLabel.Size = UDim2.new(0, 90, 1, 0)
 houseLabel.BackgroundTransparency = 1
-houseLabel.Text = "🏠 Shack"
+houseLabel.Text = "🏠 --"
 houseLabel.TextColor3 = C.TEXT_DIM
 houseLabel.TextSize = 15
 houseLabel.Font = Enum.Font.GothamBold
@@ -99,14 +108,16 @@ sep2.Parent = dataBar
 local dpsLabel = Instance.new("TextLabel")
 dpsLabel.Size = UDim2.new(0, 70, 1, 0)
 dpsLabel.BackgroundTransparency = 1
-dpsLabel.Text = "⚡ 1/s"
+dpsLabel.Text = "⚡ --"
 dpsLabel.TextColor3 = C.ACCENT_CYAN
 dpsLabel.TextSize = 14
 dpsLabel.Font = Enum.Font.GothamBold
 dpsLabel.TextXAlignment = Enum.TextXAlignment.Left
 dpsLabel.Parent = dataBar
 
--- === LEFT SIDEBAR ===
+-- ============================================================
+-- LEFT SIDEBAR (buttons)
+-- ============================================================
 local sidebar = Instance.new("Frame")
 sidebar.Size = UDim2.new(0, 165, 0, 0)
 sidebar.Position = UDim2.new(0, 12, 0, 72)
@@ -115,9 +126,11 @@ sidebar.BackgroundTransparency = 0.08
 sidebar.AutomaticSize = Enum.AutomaticSize.Y
 sidebar.Parent = screenGui
 Corner(sidebar, 12)
+
 local sbLayout = Instance.new("UIListLayout")
 sbLayout.Padding = UDim.new(0, 6)
 sbLayout.Parent = sidebar
+
 local sbPad = Instance.new("UIPadding")
 sbPad.PaddingTop = UDim.new(0, 10)
 sbPad.PaddingBottom = UDim.new(0, 10)
@@ -130,7 +143,7 @@ local function MakeBtn(text, color)
     btn.Size = UDim2.new(1, 0, 0, 38)
     btn.BackgroundColor3 = color
     btn.Text = text
-    btn.TextColor3 = Color3.fromRGB(255,255,255)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.TextSize = 13
     btn.Font = Enum.Font.GothamBold
     btn.Parent = sidebar
@@ -138,13 +151,15 @@ local function MakeBtn(text, color)
     return btn
 end
 
-local dailyBtn  = MakeBtn("🎁  Daily Reward", C.ACCENT_ORANGE)
+local dailyBtn   = MakeBtn("🎁  Daily Reward", C.ACCENT_ORANGE)
 local collectBtn = MakeBtn("⛏️  Collect Data", C.ACCENT_BLUE)
 local buyPlotBtn = MakeBtn("📦  Buy Plot [E]", C.ACCENT_GREEN)
 local placeCompBtn = MakeBtn("💻  Place Computer", C.ACCENT_PURPLE)
-local statsBtn  = MakeBtn("📊  Stats", Color3.fromRGB(55, 55, 80))
+local statsBtn   = MakeBtn("📊  Stats", Color3.fromRGB(55, 55, 80))
 
--- === NOTIFICATION ===
+-- ============================================================
+-- NOTIFICATION LABEL
+-- ============================================================
 local notifLabel = Instance.new("TextLabel")
 notifLabel.Size = UDim2.new(0, 380, 0, 36)
 notifLabel.Position = UDim2.new(0.5, -190, 0, 70)
@@ -154,11 +169,13 @@ notifLabel.TextColor3 = C.TEXT_WHITE
 notifLabel.TextSize = 16
 notifLabel.Font = Enum.Font.GothamBold
 notifLabel.TextStrokeTransparency = 0.6
-notifLabel.TextStrokeColor3 = Color3.fromRGB(0,0,0)
+notifLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 notifLabel.TextTransparency = 1
 notifLabel.Parent = screenGui
 
--- === STATS PANEL ===
+-- ============================================================
+-- STATS PANEL
+-- ============================================================
 local statsFrame = Instance.new("Frame")
 statsFrame.Size = UDim2.new(0, 300, 0, 380)
 statsFrame.Position = UDim2.new(0.5, -150, 0.5, -190)
@@ -184,7 +201,7 @@ statsClose.Size = UDim2.new(0, 26, 0, 26)
 statsClose.Position = UDim2.new(1, -32, 0, 7)
 statsClose.BackgroundColor3 = C.ACCENT_RED
 statsClose.Text = "✕"
-statsClose.TextColor3 = Color3.fromRGB(255,255,255)
+statsClose.TextColor3 = Color3.fromRGB(255, 255, 255)
 statsClose.TextSize = 13
 statsClose.Font = Enum.Font.GothamBold
 statsClose.Parent = statsFrame
@@ -209,19 +226,40 @@ local function AddRow(icon, label, value, valColor)
     row.BackgroundTransparency = 0.3
     row.Parent = statsScroll
     Corner(row, 6)
+
     local ic = Instance.new("TextLabel")
-    ic.Size = UDim2.new(0, 24, 1, 0) ic.Position = UDim2.new(0, 6, 0, 0)
-    ic.BackgroundTransparency = 1 ic.Text = icon ic.TextSize = 14
-    ic.Font = Enum.Font.GothamBold ic.TextColor3 = C.TEXT_WHITE ic.Parent = row
+    ic.Size = UDim2.new(0, 24, 1, 0)
+    ic.Position = UDim2.new(0, 6, 0, 0)
+    ic.BackgroundTransparency = 1
+    ic.Text = icon
+    ic.TextSize = 14
+    ic.Font = Enum.Font.GothamBold
+    ic.TextColor3 = C.TEXT_WHITE
+    ic.Parent = row
+
     local nl = Instance.new("TextLabel")
-    nl.Size = UDim2.new(0.55, -26, 1, 0) nl.Position = UDim2.new(0, 30, 0, 0)
-    nl.BackgroundTransparency = 1 nl.Text = label nl.TextColor3 = C.TEXT_DIM
-    nl.TextSize = 13 nl.Font = Enum.Font.Gotham nl.TextXAlignment = Enum.TextXAlignment.Left nl.Parent = row
+    nl.Size = UDim2.new(0.55, -26, 1, 0)
+    nl.Position = UDim2.new(0, 30, 0, 0)
+    nl.BackgroundTransparency = 1
+    nl.Text = label
+    nl.TextColor3 = C.TEXT_DIM
+    nl.TextSize = 13
+    nl.Font = Enum.Font.Gotham
+    nl.TextXAlignment = Enum.TextXAlignment.Left
+    nl.Parent = row
+
     local vl = Instance.new("TextLabel")
     vl.Name = "Value"
-    vl.Size = UDim2.new(0.45, -6, 1, 0) vl.Position = UDim2.new(0.55, 0, 0, 0)
-    vl.BackgroundTransparency = 1 vl.Text = value vl.TextColor3 = valColor or C.TEXT_WHITE
-    vl.TextSize = 14 vl.Font = Enum.Font.GothamBold vl.TextXAlignment = Enum.TextXAlignment.Right vl.Parent = row
+    vl.Size = UDim2.new(0.45, -6, 1, 0)
+    vl.Position = UDim2.new(0.55, 0, 0, 0)
+    vl.BackgroundTransparency = 1
+    vl.Text = value
+    vl.TextColor3 = valColor or C.TEXT_WHITE
+    vl.TextSize = 14
+    vl.Font = Enum.Font.GothamBold
+    vl.TextXAlignment = Enum.TextXAlignment.Right
+    vl.Parent = row
+
     return vl
 end
 
@@ -239,13 +277,15 @@ upgradeBtn.Size = UDim2.new(1, -20, 0, 38)
 upgradeBtn.Position = UDim2.new(0, 10, 1, -44)
 upgradeBtn.BackgroundColor3 = C.ACCENT_PURPLE
 upgradeBtn.Text = "🏠  Upgrade House"
-upgradeBtn.TextColor3 = Color3.fromRGB(255,255,255)
+upgradeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 upgradeBtn.TextSize = 14
 upgradeBtn.Font = Enum.Font.GothamBold
 upgradeBtn.Parent = statsFrame
 Corner(upgradeBtn, 8)
 
--- === FUNCTIONS ===
+-- ============================================================
+-- HELPER FUNCTIONS
+-- ============================================================
 local currentData = 0
 
 local function UpdateDataDisplay(amount)
@@ -265,12 +305,16 @@ local function ShowNotification(message, color)
     notifLabel.TextTransparency = 1
     task.spawn(function()
         for i = 0, 1, 0.1 do
-            if notifLabel and notifLabel.Parent then notifLabel.TextTransparency = 1 - i end
+            if notifLabel and notifLabel.Parent then
+                notifLabel.TextTransparency = 1 - i
+            end
             task.wait(0.025)
         end
         task.delay(1.5, function()
             for i = 0, 1, 0.08 do
-                if notifLabel and notifLabel.Parent then notifLabel.TextTransparency = i end
+                if notifLabel and notifLabel.Parent then
+                    notifLabel.TextTransparency = i
+                end
                 task.wait(0.025)
             end
         end)
@@ -287,7 +331,7 @@ local function RefreshStats()
         return nil
     end)
     if ok and data then
-        local names = {"Shack","Small House","Modern House","Tech Villa","Mega Compound"}
+        local names = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
         sHouse.Text = (names[data.HouseTier] or "Shack") .. " (T" .. data.HouseTier .. ")"
         sPlots.Text = tostring(data.Plots and #data.Plots or 0)
         sComps.Text = tostring(data.Computers and #data.Computers or 0)
@@ -297,61 +341,61 @@ local function RefreshStats()
         sSpent.Text = tostring(data.TotalSpent or 0)
         local dps = 1
         if data.Computers then
-            local dv = {2,8,30,120}
-            for _,c in ipairs(data.Computers) do dps = dps + (dv[c.tier] or 0) end
+            local dv = {2, 8, 30, 120}
+            for _, c in ipairs(data.Computers) do dps = dps + (dv[c.tier] or 0) end
         end
         sDps.Text = dps .. "/s"
         dpsLabel.Text = "⚡ " .. dps .. "/s"
         local nt = data.HouseTier + 1
         if nt <= 5 then
-            upgradeBtn.Text = "🏠  " .. names[nt] .. "  —  " .. ({0,200,1000,5000,25000})[nt] .. " Data"
+            upgradeBtn.Text = "🏠  " .. names[nt] .. "  —  " .. ({0, 200, 1000, 5000, 25000})[nt] .. " Data"
             upgradeBtn.BackgroundColor3 = C.ACCENT_PURPLE
         else
             upgradeBtn.Text = "✅  Max Level"
-            upgradeBtn.BackgroundColor3 = Color3.fromRGB(50,50,70)
+            upgradeBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
         end
     end
 end
 
--- === DATA TRACKING (aggressive) ===
+-- ============================================================
+-- DATA TRACKING — Single reliable method: leaderstats Changed
+-- ============================================================
 print("DataTycoon: Setting up data tracking...")
 
--- Method 1: leaderstats Changed event
 task.spawn(function()
+    -- Wait for leaderstats (up to 30 seconds)
     local ls = nil
-    for i = 1, 40 do
+    for i = 1, 60 do
         ls = player:FindFirstChild("leaderstats")
         if ls then break end
         task.wait(0.5)
     end
+
     if not ls then
-        warn("DataTycoon: No leaderstats after 20s!")
-        -- Show error in UI
+        warn("DataTycoon: No leaderstats after 30s!")
         dataLabel.Text = "💰  Error"
         dataLabel.TextColor3 = C.ACCENT_RED
         return
     end
     print("DataTycoon: leaderstats found")
-    
+
+    -- Get Data value
     local dv = ls:FindFirstChild("Data")
     if dv then
         UpdateDataDisplay(dv.Value)
         print("DataTycoon: Initial data = " .. dv.Value)
         dv.Changed:Connect(function(v)
-            print("DataTycoon: Data.Changed = " .. v)
+            print("DataTycoon: Data changed = " .. v)
             UpdateDataDisplay(v)
         end)
     else
         warn("DataTycoon: No Data value in leaderstats")
-        -- Try to find it by iterating
-        for _,child in ipairs(ls:GetChildren()) do
-            print("  leaderstats child: " .. child.Name .. " = " .. tostring(child.Value))
-        end
     end
-    
+
+    -- Get House value
     local hv = ls:FindFirstChild("House")
     if hv then
-        local names = {"Shack","Small House","Modern House","Tech Villa","Mega Compound"}
+        local names = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
         houseLabel.Text = "🏠 " .. (names[hv.Value] or "Shack")
         hv.Changed:Connect(function(v)
             houseLabel.Text = "🏠 " .. (names[v] or "Shack")
@@ -359,14 +403,14 @@ task.spawn(function()
     end
 end)
 
--- Method 2: DataUpdated RemoteEvent
+-- Backup: also listen for DataUpdated RemoteEvent
 task.spawn(function()
     local ev = ReplicatedStorage:WaitForChild("Events", 15)
     if ev then
         local du = ev:WaitForChild("DataUpdated", 10)
         if du then
             du.OnClientEvent:Connect(function(amount)
-                print("DataTycoon: DataUpdated event = " .. amount)
+                print("DataTycoon: DataUpdated = " .. amount)
                 UpdateDataDisplay(amount)
             end)
             print("DataTycoon: DataUpdated connected")
@@ -374,177 +418,175 @@ task.spawn(function()
     end
 end)
 
--- Method 3: Poll every 1s (aggressive fallback)
-task.spawn(function()
-    task.wait(3)
-    while true do
-        local ls = player:FindFirstChild("leaderstats")
-        if ls then
-            local dv = ls:FindFirstChild("Data")
-            if dv and dv.Value ~= currentData then
-                print("DataTycoon: Poll caught data = " .. dv.Value)
-                UpdateDataDisplay(dv.Value)
-            end
-        end
-        task.wait(1)
-    end
-end)
-
--- Method 4: Display only (read from leaderstats, never overwrite)
-task.spawn(function()
-    task.wait(2)
-    while true do
-        local ls = player:FindFirstChild("leaderstats")
-        if ls then
-            local dv = ls:FindFirstChild("Data")
-            if dv then
-                dataLabel.Text = "💰  " .. tostring(dv.Value)
-            end
-        end
-        task.wait(1.5)
-    end
-end)
-
--- === EVENT CONNECTIONS ===
+-- ============================================================
+-- WAIT FOR EVENTS, THEN CONNECT BUTTONS
+-- ============================================================
 task.spawn(function()
     print("DataTycoon: Waiting for Events...")
-    local Events = ReplicatedStorage:WaitForChild("Events", 20)
-    if not Events then warn("DataTycoon: No Events!"); return end
-    print("DataTycoon: Events found")
-    
-    local claimEv     = Events:WaitForChild("ClaimDailyReward", 15)
-    local claimedEv   = Events:WaitForChild("DailyRewardClaimed", 15)
-    local notifEv     = Events:WaitForChild("Notification", 15)
-    local collectEv   = Events:WaitForChild("CollectBlocks", 15)
-    local buyPlotEv   = Events:WaitForChild("PurchasePlot", 15)
-    local plotPurchEv = Events:WaitForChild("PlotPurchased", 15)
-    local compPlacEv  = Events:WaitForChild("ComputerPlaced", 15)
-    local houseUpgEv  = Events:WaitForChild("HouseUpgraded", 15)
-    local upgradeEv   = Events:WaitForChild("UpgradeHouse", 15)
-    local placeCompEv = Events:WaitForChild("PlaceComputer", 15)
-    local collectBlkEv = Events:FindFirstChild("CollectBlock")
-    
+    local Events = ReplicatedStorage:WaitForChild("Events", 30)
+    if not Events then
+        warn("DataTycoon: No Events folder after 30s!")
+        return
+    end
+    print("DataTycoon: Events folder found")
+
+    -- Wait for all RemoteEvents
+    local claimEv      = Events:WaitForChild("ClaimDailyReward", 15)
+    local claimedEv    = Events:WaitForChild("DailyRewardClaimed", 15)
+    local notifEv      = Events:WaitForChild("Notification", 15)
+    local collectEv    = Events:WaitForChild("CollectBlocks", 15)
+    local buyPlotEv    = Events:WaitForChild("PurchasePlot", 15)
+    local plotPurchEv  = Events:WaitForChild("PlotPurchased", 15)
+    local compPlacEv   = Events:WaitForChild("ComputerPlaced", 15)
+    local houseUpgEv   = Events:WaitForChild("HouseUpgraded", 15)
+    local upgradeEv    = Events:WaitForChild("UpgradeHouse", 15)
+    local placeCompEv  = Events:WaitForChild("PlaceComputer", 15)
+    local collectOrbEv = Events:WaitForChild("CollectOrb", 15)
+
+    print("DataTycoon: All RemoteEvents found, connecting buttons...")
+
+    -- === DAILY REWARD ===
     if claimEv and claimedEv then
-        dailyBtn.MouseButton1Click:Connect(function() claimEv:FireServer() end)
+        dailyBtn.MouseButton1Click:Connect(function()
+            print("DataTycoon: Daily reward clicked")
+            claimEv:FireServer()
+        end)
         claimedEv.OnClientEvent:Connect(function(reward, streak)
-            ShowNotification("Day " .. streak .. ": +" .. reward .. " Data!", Color3.fromRGB(100,255,150))
+            ShowNotification("Day " .. streak .. ": +" .. reward .. " Data!", Color3.fromRGB(100, 255, 150))
             dailyBtn.Text = "✅ Claimed!"
-            dailyBtn.BackgroundColor3 = Color3.fromRGB(50,50,70)
+            dailyBtn.BackgroundColor3 = Color3.fromRGB(50, 50, 70)
             task.delay(2, function()
-                if dailyBtn and dailyBtn.Parent then dailyBtn.Text = "🎁  Daily Reward"; dailyBtn.BackgroundColor3 = C.ACCENT_ORANGE end
+                if dailyBtn and dailyBtn.Parent then
+                    dailyBtn.Text = "🎁  Daily Reward"
+                    dailyBtn.BackgroundColor3 = C.ACCENT_ORANGE
+                end
             end)
         end)
-        print("DataTycoon: Daily reward OK")
+        print("DataTycoon: Daily reward connected ✓")
     end
-    
-    if collectEv then
-        collectBtn.MouseButton1Click:Connect(function() collectEv:FireServer(1) end)
-        print("DataTycoon: Collect OK")
+
+    -- === COLLECT DATA (button fallback) ===
+    if collectOrbEv then
+        collectBtn.MouseButton1Click:Connect(function()
+            print("DataTycoon: Collect clicked")
+            collectOrbEv:FireServer()
+        end)
+        print("DataTycoon: Collect button connected ✓")
     end
-    
+
+    -- === BUY PLOT ===
     if buyPlotEv then
-        local function Buy() buyPlotEv:FireServer("plot_3_3") end
+        local function Buy()
+            print("DataTycoon: Buy plot clicked")
+            buyPlotEv:FireServer("plot_3_3")
+        end
         buyPlotBtn.MouseButton1Click:Connect(Buy)
         UserInputService.InputBegan:Connect(function(input, gp)
             if not gp and input.KeyCode == Enum.KeyCode.E then Buy() end
         end)
-        print("DataTycoon: Buy plot OK")
+        print("DataTycoon: Buy plot connected ✓")
     end
-    
+
+    -- === PLACE COMPUTER ===
     if placeCompEv then
-        placeCompBtn.MouseButton1Click:Connect(function() placeCompEv:FireServer("plot_3_3", 1) end)
-        print("DataTycoon: Place computer OK")
+        placeCompBtn.MouseButton1Click:Connect(function()
+            print("DataTycoon: Place computer clicked")
+            placeCompEv:FireServer("plot_3_3", 1)
+        end)
+        print("DataTycoon: Place computer connected ✓")
     end
-    
+
+    -- === HOUSE UPGRADE ===
+    if upgradeEv then
+        upgradeBtn.MouseButton1Click:Connect(function()
+            print("DataTycoon: Upgrade house clicked")
+            upgradeEv:FireServer()
+        end)
+        print("DataTycoon: House upgrade connected ✓")
+    end
+
+    -- === NOTIFICATIONS ===
     if notifEv then
         notifEv.OnClientEvent:Connect(function(msg, t)
             local col = C.TEXT_WHITE
-            if t == "success" then col = Color3.fromRGB(100,255,150) elseif t == "error" then col = Color3.fromRGB(255,100,100) end
+            if t == "success" then col = Color3.fromRGB(100, 255, 150)
+            elseif t == "error" then col = Color3.fromRGB(255, 100, 100) end
             ShowNotification(msg, col)
         end)
     end
-    
+
+    -- === PLOT PURCHASED (other players) ===
     if plotPurchEv then
         plotPurchEv.OnClientEvent:Connect(function(pid, oid, oname)
-            if oid ~= player.UserId then ShowNotification(oname .. " bought a plot!", Color3.fromRGB(255,200,100)) end
+            if oid ~= player.UserId then
+                ShowNotification(oname .. " bought a plot!", Color3.fromRGB(255, 200, 100))
+            end
         end)
     end
-    
+
+    -- === COMPUTER PLACED ===
     if compPlacEv then
-        compPlacEv.OnClientEvent:Connect(function(pid, tier, name) ShowNotification(name .. " placed!", C.ACCENT_BLUE) end)
+        compPlacEv.OnClientEvent:Connect(function(pid, tier, name)
+            ShowNotification(name .. " placed!", C.ACCENT_BLUE)
+        end)
     end
-    
+
+    -- === HOUSE UPGRADED ===
     if houseUpgEv then
-        houseUpgEv.OnClientEvent:Connect(function(tier, name) ShowNotification("Upgraded to " .. name .. "!", C.ACCENT_PURPLE) end)
+        houseUpgEv.OnClientEvent:Connect(function(tier, name)
+            ShowNotification("Upgraded to " .. name .. "!", C.ACCENT_PURPLE)
+        end)
     end
-    
-    if upgradeEv then
-        upgradeBtn.MouseButton1Click:Connect(function() upgradeEv:FireServer() end)
-        print("DataTycoon: House upgrade OK")
-    end
-    
+
+    -- === STATS PANEL ===
     statsBtn.MouseButton1Click:Connect(function()
         statsFrame.Visible = not statsFrame.Visible
         if statsFrame.Visible then RefreshStats() end
     end)
-    statsClose.MouseButton1Click:Connect(function() statsFrame.Visible = false end)
-    
-    -- Data orb touch collection
-    local collectOrbEv = Events:FindFirstChild("CollectOrb")
+    statsClose.MouseButton1Click:Connect(function()
+        statsFrame.Visible = false
+    end)
+
+    -- ============================================================
+    -- DATA ORB TOUCH COLLECTION
+    -- Connect Touched to all DataRing parts in CollectibleBlocks
+    -- ============================================================
     if collectOrbEv then
-        local function onTouched(hit)
-            local character = hit.Parent
-            local plr = Players:GetPlayerFromCharacter(character)
-            if plr == player then
-                collectOrbEv:FireServer()
-            end
-        end
-        
-        local blocksFolder = workspace:WaitForChild("CollectibleBlocks", 15)
+        local blocksFolder = workspace:WaitForChild("CollectibleBlocks", 20)
         if blocksFolder then
-            task.wait(3) -- Wait for baseplate to create all orbs
-            -- Connect to all DataRing parts (collidable ground rings)
+            print("DataTycoon: CollectibleBlocks folder found")
+
+            local function onOrbTouched(hit)
+                local character = hit.Parent
+                local plr = Players:GetPlayerFromCharacter(character)
+                if plr == player then
+                    print("DataTycoon: Orb touched by " .. player.Name)
+                    collectOrbEv:FireServer()
+                end
+            end
+
+            -- Connect to existing orbs
+            local orbCount = 0
             for _, desc in ipairs(blocksFolder:GetDescendants()) do
                 if desc:IsA("BasePart") and desc.Name == "DataRing" then
-                    desc.Touched:Connect(onTouched)
+                    desc.Touched:Connect(onOrbTouched)
+                    orbCount = orbCount + 1
                 end
             end
-            -- Also connect new orbs added later
+            print("DataTycoon: Connected " .. orbCount .. " orbs ✓")
+
+            -- Connect to orbs added later
             blocksFolder.DescendantAdded:Connect(function(desc)
                 if desc:IsA("BasePart") and desc.Name == "DataRing" then
-                    desc.Touched:Connect(onTouched)
+                    desc.Touched:Connect(onOrbTouched)
                 end
             end)
-            -- Count connected orbs
-            local count = 0
-            for _, d in ipairs(blocksFolder:GetDescendants()) do if d:IsA("BasePart") and d.Name == "DataRing" then count = count + 1 end end
-            print("DataTycoon: Orb touch collection OK (" .. count .. " orbs)")
+        else
+            warn("DataTycoon: No CollectibleBlocks folder!")
         end
     end
-    
-    -- Collect button: collect nearest orb
-    if collectEv and collectOrbEv then
-        collectBtn.MouseButton1Click:Connect(function()
-            local char = player.Character
-            if not char then return end
-            local hrp = char:FindFirstChild("HumanoidRootPart")
-            if not hrp then return end
-            local blocksFolder = workspace:FindFirstChild("CollectibleBlocks")
-            if blocksFolder then
-                local nearestDist = 20
-                local found = false
-                for _, desc in ipairs(blocksFolder:GetDescendants()) do
-                    if desc:IsA("BasePart") and desc.Name == "DataRing" then
-                        local dist = (desc.Position - hrp.Position).Magnitude
-                        if dist < nearestDist then nearestDist = dist; found = true end
-                    end
-                end
-                if found then collectOrbEv:FireServer() end
-            end
-        end)
-    end
-    
-    print("DataTycoon: All events connected!")
+
+    print("DataTycoon: All buttons connected! ✓")
 end)
 
 print("DataTycoon: Client ready!")
