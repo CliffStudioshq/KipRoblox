@@ -51,13 +51,12 @@ local CONFIG = {
     BLOCK_REWARD = 5,
     PASSIVE_INCOME = 1,  -- Data per second
     
-    BASE_PLOT_PRICE = 50,
+    BASE_PLOT_PRICE = 60,
     PLOT_PRICE_MULTIPLIER = 2.0,
-    MAX_PLOTS = 6,
-    PLOT_SIZE = 90,
-    PLOT_SPACING = 130,  -- 90 plot + 40 gap
+    MAX_PLOTS = 4,
+    PLOT_SIZE = 120,
+    PLOT_SPACING = 170,  -- 120 plot + 50 gap
     PLOT_RANGE = 3,
-    PLOT_MIN_DIST = 3,  -- Only outermost ring = 16 plots
     
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,   dps = 2,   slots = 1},
@@ -68,10 +67,10 @@ local CONFIG = {
     
     HOUSE_TIERS = {
         {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
-        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 5},
-        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 10},
-        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 16},
-        {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 16},
+        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 4},
+        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 8},
+        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 8},
+        {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 8},
     },
     
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
@@ -97,30 +96,26 @@ local DEFAULT_DATA = {
 local Plots = {}
 
 local function InitPlots()
-    for x = -CONFIG.PLOT_RANGE, CONFIG.PLOT_RANGE do
-        for z = -CONFIG.PLOT_RANGE, CONFIG.PLOT_RANGE do
-            local dist = math.max(math.abs(x), math.abs(z))
-            -- Only outermost ring for privacy
-            if dist >= CONFIG.PLOT_MIN_DIST then
-                local plotId = "plot_" .. x .. "_" .. z
-                local price = math.floor(CONFIG.BASE_PLOT_PRICE * (CONFIG.PLOT_PRICE_MULTIPLIER ^ dist))
-                Plots[plotId] = {
-                    id = plotId,
-                    owner = nil,
-                    ownerName = nil,
-                    x = x,
-                    z = z,
-                    dist = dist,
-                    price = price,
-                    center = Vector3.new(x * CONFIG.PLOT_SPACING, 0.5, z * CONFIG.PLOT_SPACING),
-                    computers = {},
-                }
-            end
-        end
+    -- Only 8 specific plots: 4 corners + 4 edge midpoints
+    local plotCoords = {
+        {-3,-3},{-3,3},{3,-3},{3,3},  -- 4 corners
+        {0,-3},{0,3},{-3,0},{3,0},      -- 4 edge midpoints
+    }
+    for _, coord in ipairs(plotCoords) do
+        local x, z = coord[1], coord[2]
+        local dist = math.max(math.abs(x), math.abs(z))
+        local plotId = "plot_" .. x .. "_" .. z
+        local price = math.floor(CONFIG.BASE_PLOT_PRICE * (CONFIG.PLOT_PRICE_MULTIPLIER ^ dist))
+        Plots[plotId] = {
+            id = plotId, owner = nil, ownerName = nil,
+            x = x, z = z, dist = dist, price = price,
+            center = Vector3.new(x * CONFIG.PLOT_SPACING, 0.5, z * CONFIG.PLOT_SPACING),
+            computers = {},
+        }
     end
     local count = 0
     for _ in pairs(Plots) do count = count + 1 end
-    print("DataTycoon: " .. count .. " plots (outer ring, " .. CONFIG.PLOT_SPACING .. " spacing)")
+    print("DataTycoon: " .. count .. " plots (big, " .. CONFIG.PLOT_SPACING .. " spacing)")
 end
 
 -- === DATA FUNCTIONS ===

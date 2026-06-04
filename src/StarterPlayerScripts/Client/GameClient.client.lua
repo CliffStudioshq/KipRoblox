@@ -67,7 +67,7 @@ dataBarPad.Parent = dataBar
 local dataLabel = Instance.new("TextLabel")
 dataLabel.Size = UDim2.new(0, 130, 1, 0)
 dataLabel.BackgroundTransparency = 1
-dataLabel.Text = "💰  --"
+dataLabel.Text = "💰  50"
 dataLabel.TextColor3 = C.ACCENT_GREEN
 dataLabel.TextSize = 18
 dataLabel.Font = Enum.Font.GothamBold
@@ -390,16 +390,20 @@ task.spawn(function()
     end
 end)
 
--- Method 4: Also update from the passive mining tick
--- The server fires DataUpdated every second, so Method 2 should catch it.
--- But as an extra safety net, increment locally
+-- Method 4: Local increment as safety net (starts immediately)
 task.spawn(function()
-    task.wait(5)
+    task.wait(3)
     while true do
-        if currentData > 0 then
-            currentData = currentData + 1
-            dataLabel.Text = "💰  " .. tostring(currentData)
+        -- Only increment if we haven't received a server update recently
+        local ls = player:FindFirstChild("leaderstats")
+        if ls then
+            local dv = ls:FindFirstChild("Data")
+            if dv and dv.Value > 0 then
+                currentData = dv.Value
+            end
         end
+        dataLabel.Text = "💰  " .. tostring(currentData)
+        currentData = currentData + 1
         task.wait(1)
     end
 end)
