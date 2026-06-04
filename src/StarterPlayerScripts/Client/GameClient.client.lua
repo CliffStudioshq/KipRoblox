@@ -10,7 +10,23 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local Events = ReplicatedStorage:WaitForChild("Events")
+-- Wait for server to create all events
+local Events = ReplicatedStorage:WaitForChild("Events", 10)
+if not Events then
+    warn("DataTycoon: Events folder not found! Server may not be loaded.")
+    return
+end
+
+-- Wait for all required events to exist
+local function waitForEvent(name, timeout)
+    timeout = timeout or 10
+    return Events:WaitForChild(name, timeout)
+end
+
+-- Safely get events (with fallbacks)
+local function getEvent(name)
+    return Events:FindFirstChild(name)
+end
 
 -- === UI SETUP ===
 
@@ -67,7 +83,10 @@ notifLabel.Parent = notifFrame
 
 local function UpdateDataDisplay(amount)
     dataLabel.Text = "💰 Data: " .. tostring(amount)
-    dataLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+    dataLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
+    task.delay(0.3, function()
+        dataLabel.TextColor3 = Color3.fromRGB(255, 215, 0)
+    end)
 end
 
 local function ShowNotification(message, notifType)
@@ -84,39 +103,41 @@ local function ShowNotification(message, notifType)
     end)
 end
 
--- === EVENT CONNECTIONS ===
-
-Events.DataUpdated.OnClientEvent:Connect(function(newAmount)
-    UpdateDataDisplay(newAmount)
-end)
-
-Events.Notification.OnClientEvent:Connect(function(message, notifType)
-    ShowNotification(message, notifType)
-end)
-
-Events.PlotPurchased.OnClientEvent:Connect(function(plotId, ownerId)
-    if ownerId == player.UserId then
-        ShowNotification("You purchased a plot!", "success")
-    end
-end)
-
 -- === INITIAL DATA LOAD ===
 
--- Wait for everything to load
-task.wait(3)
+task.wait(2) -- Wait for everything to load
 
--- Try to get player data from server
-local success, data = pcall(function()
-    return Events.GetPlayerData:InvokeServer()
-end)
-
-if success and data then
-    UpdateDataDisplay(data.Data)
-    print("DataTycoon: Client loaded! Data: " .. data.Data)
+local GetPlayerData = getEvent("GetPlayerData")
+if GetPlayerData then
+    local success, data = pcall(function()
+        return GetPlayerData:InvokeServer()
+    end)
+    if success and data then
+        UpdateDataDisplay(data.Data)
+        print("DataTycoon: Client loaded! Data: " .. data.Data)
+    else
+        warn("DataTycoon: Failed to load player data")
+        UpdateDataDisplay(0)
+    end
 else
-    -- If server data not available, show default
-    UpdateDataDisplay(100)
-    print("DataTycoon: Client loaded with default data")
+    warn("DataTycoon: GetPlayerData event not found")
+    UpdateDataDisplay(0)
+end
+
+-- === EVENT CONNECTIONS (safe) ===
+
+local DataUpdated = getEvent("DataUpdated")
+if DataUpdated then
+    DataUpdated.OnClientEvent:Connect(function(newAmount)
+        UpdateDataDisplay(newAmount)
+    end)
+end
+
+local Notification = getEvent("Notification")
+if Notification then
+    Notification.OnClientEvent:Connect(function(message, notifType)
+        ShowNotification(message, notifType)
+    end)
 end
 
 print("DataTycoon: Client ready!")
