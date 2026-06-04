@@ -51,13 +51,13 @@ local CONFIG = {
     BLOCK_REWARD = 5,
     PASSIVE_INCOME = 1,  -- Data per second
     
-    BASE_PLOT_PRICE = 40,
-    PLOT_PRICE_MULTIPLIER = 1.8,
-    MAX_PLOTS = 8,
-    PLOT_SIZE = 80,
-    PLOT_SPACING = 110,  -- 80 plot + 30 gap
+    BASE_PLOT_PRICE = 50,
+    PLOT_PRICE_MULTIPLIER = 2.0,
+    MAX_PLOTS = 6,
+    PLOT_SIZE = 90,
+    PLOT_SPACING = 130,  -- 90 plot + 40 gap
     PLOT_RANGE = 3,
-    PLOT_MIN_DIST = 3,  -- Only outermost ring = 16 plots total
+    PLOT_MIN_DIST = 3,  -- Only outermost ring = 16 plots
     
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,   dps = 2,   slots = 1},
@@ -68,10 +68,10 @@ local CONFIG = {
     
     HOUSE_TIERS = {
         {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
-        {name = "Small House",   cost = 200,   maxComputers = 2,  maxPlots = 4},
-        {name = "Modern House",  cost = 1000,  maxComputers = 4,  maxPlots = 8},
-        {name = "Tech Villa",    cost = 5000,  maxComputers = 8,  maxPlots = 16},
-        {name = "Mega Compound", cost = 25000, maxComputers = 16, maxPlots = 16},
+        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 5},
+        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 10},
+        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 16},
+        {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 16},
     },
     
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
