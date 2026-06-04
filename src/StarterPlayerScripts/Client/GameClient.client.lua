@@ -489,17 +489,36 @@ task.spawn(function()
     end)
     statsClose.MouseButton1Click:Connect(function() statsFrame.Visible = false end)
     
-    if collectBlkEv then
-        local function SetupBlock(block)
-            if not block:IsA("BasePart") then return end
-            local prompt = block:FindFirstChildOfClass("ProximityPrompt")
-            if prompt then prompt.Triggered:Connect(function() collectBlkEv:FireServer() end) end
+    -- Data orb touch collection
+    local collectOrbEv = Events:FindFirstChild("CollectOrb")
+    if collectOrbEv then
+        -- Listen for touch on any orb parts (DataOrb = main sphere, DataRing = glow ring)
+        local function onTouched(hit)
+            local character = hit.Parent
+            local plr = Players:GetPlayerFromCharacter(character)
+            if plr == player then
+                collectOrbEv:FireServer()
+            end
         end
-        local folder = workspace:WaitForChild("CollectibleBlocks", 10)
-        if folder then
-            for _,b in ipairs(folder:GetChildren()) do SetupBlock(b) end
-            folder.ChildAdded:Connect(function(c) task.wait(0.2); SetupBlock(c) end)
-            print("DataTycoon: Block collection OK")
+        
+        -- Connect to existing orbs
+        local blocksFolder = workspace:WaitForChild("CollectibleBlocks", 10)
+        if blocksFolder then
+            for _, folder in ipairs(blocksFolder:GetChildren()) do
+                for _, part in ipairs(folder:GetChildren()) do
+                    if part:IsA("BasePart") and (part.Name == "DataOrb" or part.Name == "DataRing" or part.Name == "DataCore") then
+                        part.Touched:Connect(onTouched)
+                    end
+                end
+            end
+            -- Connect to future orbs
+            blocksFolder.DescendantAdded:Connect(function(desc)
+                task.wait(0.1)
+                if desc:IsA("BasePart") and (desc.Name == "DataOrb" or desc.Name == "DataRing" or desc.Name == "DataCore") then
+                    desc.Touched:Connect(onTouched)
+                end
+            end)
+            print("DataTycoon: Orb touch collection OK")
         end
     end
     
