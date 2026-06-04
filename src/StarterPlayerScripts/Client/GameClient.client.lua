@@ -1,7 +1,6 @@
 --[[
     GameClient.client.lua
     Client-side controller for DataTycoon
-    Handles UI, player input, and server communication
 ]]
 
 local Players = game:GetService("Players")
@@ -10,33 +9,25 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Wait for server to create all events
+-- Wait for events to be created by server
 local Events = ReplicatedStorage:WaitForChild("Events", 10)
 if not Events then
-    warn("DataTycoon: Events folder not found! Server may not be loaded.")
+    warn("DataTycoon: Events folder not found!")
     return
 end
 
--- Wait for all required events to exist
-local function waitForEvent(name, timeout)
-    timeout = timeout or 10
-    return Events:WaitForChild(name, timeout)
-end
+-- Get remote events
+local dataUpdated = Events:WaitForChild("DataUpdated", 10)
+local notification = Events:WaitForChild("Notification", 10)
+local getPlayerData = Events:WaitForChild("GetPlayerData", 10)
 
--- Safely get events (with fallbacks)
-local function getEvent(name)
-    return Events:FindFirstChild(name)
-end
-
--- === UI SETUP ===
-
--- Create main HUD
+-- Create UI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DataTycoonHUD"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
--- Data display (top-right)
+-- Data display
 local dataFrame = Instance.new("Frame")
 dataFrame.Name = "DataDisplay"
 dataFrame.Size = UDim2.new(0, 200, 0, 60)
@@ -59,7 +50,7 @@ dataLabel.TextSize = 24
 dataLabel.Font = Enum.Font.GothamBold
 dataLabel.Parent = dataFrame
 
--- Notification area (center-top)
+-- Notification area
 local notifFrame = Instance.new("Frame")
 notifFrame.Name = "NotificationArea"
 notifFrame.Size = UDim2.new(0, 400, 0, 50)
@@ -79,8 +70,7 @@ notifLabel.TextStrokeTransparency = 0.5
 notifLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
 notifLabel.Parent = notifFrame
 
--- === FUNCTIONS ===
-
+-- Functions
 local function UpdateDataDisplay(amount)
     dataLabel.Text = "💰 Data: " .. tostring(amount)
     dataLabel.TextColor3 = Color3.fromRGB(100, 255, 100)
@@ -103,41 +93,31 @@ local function ShowNotification(message, notifType)
     end)
 end
 
--- === INITIAL DATA LOAD ===
+-- Event connections
+if dataUpdated then
+    dataUpdated.OnClientEvent:Connect(function(newAmount)
+        UpdateDataDisplay(newAmount)
+    end)
+end
 
-task.wait(2) -- Wait for everything to load
+if notification then
+    notification.OnClientEvent:Connect(function(message, notifType)
+        ShowNotification(message, notifType)
+    end)
+end
 
-local GetPlayerData = getEvent("GetPlayerData")
-if GetPlayerData then
+-- Load initial data
+task.wait(2)
+if getPlayerData then
     local success, data = pcall(function()
-        return GetPlayerData:InvokeServer()
+        return getPlayerData:InvokeServer()
     end)
     if success and data then
         UpdateDataDisplay(data.Data)
         print("DataTycoon: Client loaded! Data: " .. data.Data)
     else
         warn("DataTycoon: Failed to load player data")
-        UpdateDataDisplay(0)
     end
 else
-    warn("DataTycoon: GetPlayerData event not found")
-    UpdateDataDisplay(0)
+    warn("DataTycoon: GetPlayerData not found")
 end
-
--- === EVENT CONNECTIONS (safe) ===
-
-local DataUpdated = getEvent("DataUpdated")
-if DataUpdated then
-    DataUpdated.OnClientEvent:Connect(function(newAmount)
-        UpdateDataDisplay(newAmount)
-    end)
-end
-
-local Notification = getEvent("Notification")
-if Notification then
-    Notification.OnClientEvent:Connect(function(message, notifType)
-        ShowNotification(message, notifType)
-    end)
-end
-
-print("DataTycoon: Client ready!")
