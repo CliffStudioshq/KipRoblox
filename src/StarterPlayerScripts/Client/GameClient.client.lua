@@ -61,19 +61,21 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "DataTycoonHUD"
 screenGui.ResetOnSpawn = false
+screenGui.SafeInset = Enum.SafeInset.Top  -- Respect Roblox safe area
 screenGui.Parent = playerGui
 
 -- ============================================================
--- TOP BAR (thin strip across the top)
+-- TOP BAR (floating card, not edge-to-edge)
 -- ============================================================
 
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
-topBar.Size = UDim2.new(1, 0, 0, 56)
-topBar.Position = UDim2.new(0, 0, 0, 0)
+topBar.Size = UDim2.new(0, 520, 0, 52)
+topBar.Position = UDim2.new(0.5, -260, 0, 12)  -- Centered, with top margin
 topBar.BackgroundColor3 = C.BG_DARK
-topBar.BackgroundTransparency = 0.15
+topBar.BackgroundTransparency = 0.1
 topBar.Parent = screenGui
+Corner(topBar, 14)
 Stroke(topBar, C.BORDER, 1)
 
 local topBarLayout = Instance.new("UIListLayout")
@@ -188,12 +190,12 @@ Corner(dailyBtn, 8)
 
 local sidebar = Instance.new("Frame")
 sidebar.Name = "Sidebar"
-sidebar.Size = UDim2.new(0, 180, 0, 180)
-sidebar.Position = UDim2.new(0, 16, 0, 72)
+sidebar.Size = UDim2.new(0, 190, 0, 200)
+sidebar.Position = UDim2.new(0, 16, 0, 80)
 sidebar.BackgroundColor3 = C.BG_CARD
 sidebar.BackgroundTransparency = 0.1
 sidebar.Parent = screenGui
-Corner(sidebar, 12)
+Corner(sidebar, 14)
 Stroke(sidebar, C.BORDER, 1)
 
 local sidebarLayout = Instance.new("UIListLayout")
@@ -245,7 +247,7 @@ Corner(placeCompBtn, 8)
 local notifLabel = Instance.new("TextLabel")
 notifLabel.Name = "NotificationLabel"
 notifLabel.Size = UDim2.new(0, 420, 0, 48)
-notifLabel.Position = UDim2.new(0.5, -210, 0, 72)
+notifLabel.Position = UDim2.new(0.5, -210, 0, 76)
 notifLabel.BackgroundTransparency = 1
 notifLabel.Text = ""
 notifLabel.TextColor3 = C.TEXT_WHITE

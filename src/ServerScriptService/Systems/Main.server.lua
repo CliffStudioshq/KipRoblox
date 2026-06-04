@@ -52,9 +52,9 @@ local CONFIG = {
     PASSIVE_INCOME = 1,  -- Data per second
     
     BASE_PLOT_PRICE = 25,
-    PLOT_PRICE_MULTIPLIER = 1.4,
-    MAX_PLOTS = 16,
-    PLOT_SIZE = 32,
+    PLOT_PRICE_MULTIPLIER = 1.5,
+    MAX_PLOTS = 12,
+    PLOT_SIZE = 64,  -- Matches baseplate: 64x64 plot tiles
     
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,   dps = 2,   slots = 1},
@@ -67,8 +67,8 @@ local CONFIG = {
         {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 4},
         {name = "Small House",   cost = 200,   maxComputers = 2,  maxPlots = 8},
         {name = "Modern House",  cost = 1000,  maxComputers = 4,  maxPlots = 16},
-        {name = "Tech Villa",    cost = 5000,  maxComputers = 8,  maxPlots = 32},
-        {name = "Mega Compound", cost = 25000, maxComputers = 16, maxPlots = 64},
+        {name = "Tech Villa",    cost = 5000,  maxComputers = 8,  maxPlots = 25},
+        {name = "Mega Compound", cost = 25000, maxComputers = 16, maxPlots = 25},
     },
     
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
@@ -94,8 +94,8 @@ local DEFAULT_DATA = {
 local Plots = {}
 
 local function InitPlots()
-    for x = -4, 4 do
-        for z = -4, 4 do
+    for x = -2, 2 do
+        for z = -2, 2 do
             local plotId = "plot_" .. x .. "_" .. z
             local distance = math.sqrt(x * x + z * z)
             local price = math.floor(CONFIG.BASE_PLOT_PRICE * (CONFIG.PLOT_PRICE_MULTIPLIER ^ distance))
@@ -111,7 +111,9 @@ local function InitPlots()
             }
         end
     end
-    print("DataTycoon: " .. #Plots .. " plots initialized")
+    local count = 0
+    for _ in pairs(Plots) do count = count + 1 end
+    print("DataTycoon: " .. count .. " plots initialized (5x5 grid, " .. CONFIG.PLOT_SIZE .. "x" .. CONFIG.PLOT_SIZE .. " each)")
 end
 
 -- === DATA FUNCTIONS ===
