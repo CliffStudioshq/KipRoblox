@@ -1,10 +1,6 @@
 --[[
     GameClient.client.lua — DataTycoon Client
-    v0.4 — SIMPLIFIED: Go back to what worked in v0.1
-    - Primary data source: leaderstats (server updates it directly)
-    - UI created immediately, no waiting for RemoteEvents
-    - Daily reward: simple FireServer/OnClientEvent
-    - No InvokeServer, no complex retry logic
+    v0.5 — Fix: houseValue.Connect -> .Changed:Connect, more robust daily reward
 ]]
 
 local Players = game:GetService("Players")
@@ -127,11 +123,10 @@ end
 
 -- === READ DATA FROM LEADERSTATS ===
 
--- Wait for server to create leaderstats
 print("DataTycoon: Waiting for leaderstats...")
 
 local leaderstats = nil
-for i = 1, 30 do  -- Wait up to 30 seconds
+for i = 1, 30 do
     leaderstats = player:FindFirstChild("leaderstats")
     if leaderstats then break end
     task.wait(1)
@@ -148,7 +143,6 @@ else
         UpdateDataDisplay(dataValue.Value)
         print("DataTycoon: Data = " .. dataValue.Value)
         
-        -- Update whenever server changes it
         dataValue.Changed:Connect(function(newValue)
             UpdateDataDisplay(newValue)
         end)
@@ -161,36 +155,44 @@ else
         local houseNames = {"Shack", "Small House", "Modern House", "Tech Villa", "Mega Compound"}
         houseLabel.Text = "🏠 " .. (houseNames[houseValue.Value] or "Shack")
         
-        houseValue.Connect(function(newTier)
+        houseValue.Changed:Connect(function(newTier)
             houseLabel.Text = "🏠 " .. (houseNames[newTier] or "Shack")
         end)
     end
 end
 
--- === DAILY REWARD (wait for RemoteEvent) ===
+-- === DAILY REWARD ===
 
 task.spawn(function()
-    print("DataTycoon: Waiting for daily reward events...")
+    print("DataTycoon: Waiting for Events folder...")
     
-    local Events = ReplicatedStorage:WaitForChild("Events", 15)
+    -- Wait for server to create the Events folder
+    local Events = ReplicatedStorage:WaitForChild("Events", 20)
     if not Events then
-        warn("DataTycoon: No Events folder found!")
+        warn("DataTycoon: No Events folder! Daily reward won't work.")
+        dailyBtn.Text = "❌ Unavailable"
+        dailyBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
         return
     end
     
-    local claimEvent = Events:WaitForChild("ClaimDailyReward", 10)
-    local claimedEvent = Events:WaitForChild("DailyRewardClaimed", 10)
-    local notifEvent = Events:WaitForChild("Notification", 10)
+    print("DataTycoon: Events folder found!")
+    
+    -- Wait for the specific events
+    local claimEvent = Events:WaitForChild("ClaimDailyReward", 15)
+    local claimedEvent = Events:WaitForChild("DailyRewardClaimed", 15)
+    local notifEvent = Events:WaitForChild("Notification", 15)
     
     if not claimEvent then
         warn("DataTycoon: ClaimDailyReward event not found!")
+        dailyBtn.Text = "❌ Unavailable"
+        dailyBtn.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
         return
     end
     
-    print("DataTycoon: Daily reward events ready!")
+    print("DataTycoon: Daily reward ready!")
     
     dailyBtn.MouseButton1Click:Connect(function()
-        print("DataTycoon: Claiming daily reward...")
+        print("DataTycoon: Click! Firing ClaimDailyReward...")
         claimEvent:FireServer()
     end)
     

@@ -6,9 +6,6 @@
             "$className": "ReplicatedStorage",
             "Modules": {
                 "$path": "src/ReplicatedStorage/Modules"
-            },
-            "Events": {
-                "$path": "src/ReplicatedStorage/Events"
             }
         },
         "ServerScriptService": {
