@@ -70,11 +70,11 @@ end
 
 -- Data Orb: bright, glowing, touch-to-collect
 local function DataOrb(cx,cy,cz,col)
-    -- Outer glow ring (visible from far)
-    local ring = P({n="DataRing",s=Vector3.new(8,0.5,8),p=Vector3.new(cx,cy-1,cz),c=col,m=Enum.Material.Neon,a=0.3,sh=Enum.PartType.Cylinder})
-    ring.CFrame = CFrame.new(cx,cy-1,cz) * CFrame.Angles(0,0,math.rad(90))
+    -- Outer glow ring (collidable, on ground)
+    local ring = P({n="DataRing",s=Vector3.new(10,1,10),p=Vector3.new(cx,cy-0.5,cz),c=col,m=Enum.Material.Neon,a=0.3,sh=Enum.PartType.Cylinder})
+    ring.CFrame = CFrame.new(cx,cy-0.5,cz) * CFrame.Angles(0,0,math.rad(90))
     
-    -- Main orb (bright, glowing)
+    -- Main orb (visible, non-collidable)
     local orb = P({n="DataOrb",s=Vector3.new(4,4,4),p=Vector3.new(cx,cy,cz),c=col,m=Enum.Material.Neon,a=0.15,sh=Enum.PartType.Ball,co=false})
     
     -- Inner bright core
@@ -93,10 +93,7 @@ local function DataOrb(cx,cy,cz,col)
     -- Billboard (always visible)
     local bb = Instance.new("BillboardGui") bb.Size=UDim2.new(0,140,0,40) bb.StudsOffset=Vector3.new(0,5,0) bb.AlwaysOnTop=true bb.Parent=orb
     local lbl = Instance.new("TextLabel") lbl.Size=UDim2.new(1,0,0.6,0) lbl.BackgroundTransparency=1 lbl.Text="✦ +5 Data" lbl.TextColor3=col lbl.TextSize=16 lbl.Font=Enum.Font.GothamBold lbl.TextStrokeTransparency=0.1 lbl.TextStrokeColor3=Color3.fromRGB(0,0,0) lbl.Parent=bb
-    local lbl2 = Instance.new("TextLabel") lbl2.Size=UDim2.new(1,0,0.4,0) lbl2.Position=UDim2.new(0,0,0.6,0) lbl2.BackgroundTransparency=1 lbl2.Text="[E] Collect" lbl2.TextColor3=Color3.fromRGB(255,255,255) lbl2.TextSize=11 lbl2.Font=Enum.Font.GothamBold lbl2.TextStrokeTransparency=0.3 lbl2.Parent=bb
-    
-    -- Touch detector (collect on touch)
-    local touch = Instance.new("TouchTransmitter") touch.Parent=orb
+    local lbl2 = Instance.new("TextLabel") lbl2.Size=UDim2.new(1,0,0.4,0) lbl2.Position=UDim2.new(0,0,0.6,0) lbl2.BackgroundTransparency=1 lbl2.Text="Walk to collect" lbl2.TextColor3=Color3.fromRGB(255,255,255) lbl2.TextSize=11 lbl2.Font=Enum.Font.GothamBold lbl2.TextStrokeTransparency=0.3 lbl2.Parent=bb
 end
 
 -- Butterfly (floating, decorative)

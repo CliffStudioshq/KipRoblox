@@ -492,7 +492,6 @@ task.spawn(function()
     -- Data orb touch collection
     local collectOrbEv = Events:FindFirstChild("CollectOrb")
     if collectOrbEv then
-        -- Listen for touch on any orb parts (DataOrb = main sphere, DataRing = glow ring)
         local function onTouched(hit)
             local character = hit.Parent
             local plr = Players:GetPlayerFromCharacter(character)
@@ -501,25 +500,48 @@ task.spawn(function()
             end
         end
         
-        -- Connect to existing orbs
-        local blocksFolder = workspace:WaitForChild("CollectibleBlocks", 10)
+        local blocksFolder = workspace:WaitForChild("CollectibleBlocks", 15)
         if blocksFolder then
-            for _, folder in ipairs(blocksFolder:GetChildren()) do
-                for _, part in ipairs(folder:GetChildren()) do
-                    if part:IsA("BasePart") and (part.Name == "DataOrb" or part.Name == "DataRing" or part.Name == "DataCore") then
-                        part.Touched:Connect(onTouched)
-                    end
+            task.wait(3) -- Wait for baseplate to create all orbs
+            -- Connect to all DataRing parts (collidable ground rings)
+            for _, desc in ipairs(blocksFolder:GetDescendants()) do
+                if desc:IsA("BasePart") and desc.Name == "DataRing" then
+                    desc.Touched:Connect(onTouched)
                 end
             end
-            -- Connect to future orbs
+            -- Also connect new orbs added later
             blocksFolder.DescendantAdded:Connect(function(desc)
-                task.wait(0.1)
-                if desc:IsA("BasePart") and (desc.Name == "DataOrb" or desc.Name == "DataRing" or desc.Name == "DataCore") then
+                if desc:IsA("BasePart") and desc.Name == "DataRing" then
                     desc.Touched:Connect(onTouched)
                 end
             end)
-            print("DataTycoon: Orb touch collection OK")
+            -- Count connected orbs
+            local count = 0
+            for _, d in ipairs(blocksFolder:GetDescendants()) do if d:IsA("BasePart") and d.Name == "DataRing" then count = count + 1 end end
+            print("DataTycoon: Orb touch collection OK (" .. count .. " orbs)")
         end
+    end
+    
+    -- Collect button: collect nearest orb
+    if collectEv and collectOrbEv then
+        collectBtn.MouseButton1Click:Connect(function()
+            local char = player.Character
+            if not char then return end
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            if not hrp then return end
+            local blocksFolder = workspace:FindFirstChild("CollectibleBlocks")
+            if blocksFolder then
+                local nearestDist = 20
+                local found = false
+                for _, desc in ipairs(blocksFolder:GetDescendants()) do
+                    if desc:IsA("BasePart") and desc.Name == "DataRing" then
+                        local dist = (desc.Position - hrp.Position).Magnitude
+                        if dist < nearestDist then nearestDist = dist; found = true end
+                    end
+                end
+                if found then collectOrbEv:FireServer() end
+            end
+        end)
     end
     
     print("DataTycoon: All events connected!")
