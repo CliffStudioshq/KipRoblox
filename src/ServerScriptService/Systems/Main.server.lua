@@ -1,16 +1,23 @@
 --[[
     Main.server.lua — DataTycoon Server
-    v0.6 — Full game systems: blocks, land, computers, house upgrades
+    v0.18 — Bulletproof rewrite
+    Creates ALL game systems, world, orbs, nature, GUI
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService = game:GetService("DataStoreService")
-local RunService = game:GetService("RunService")
 
-local DataStore = DataStoreService:GetDataStore("DataTycoon_v3")
+print("========================================")
+print("DataTycoon v0.18 — Server starting...")
+print("========================================")
 
--- === CREATE REMOTE EVENTS ===
+local DataStore = DataStoreService:GetDataStore("DataTycoon_v4")
+
+-- ============================================================
+-- CREATE REMOTE EVENTS (in ReplicatedStorage)
+-- ============================================================
 local Events = Instance.new("Folder")
 Events.Name = "Events"
 Events.Parent = ReplicatedStorage
@@ -24,7 +31,7 @@ end
 
 -- Client → Server
 local ClaimDailyReward = CreateEvent("ClaimDailyReward")
-local CollectBlocks = CreateEvent("CollectBlocks")
+local CollectOrb = CreateEvent("CollectOrb")
 local PurchasePlot = CreateEvent("PurchasePlot")
 local SellPlot = CreateEvent("SellPlot")
 local PlaceComputer = CreateEvent("PlaceComputer")
@@ -41,50 +48,46 @@ local HouseUpgraded = CreateEvent("HouseUpgraded")
 
 -- Remote Functions
 local GetPlayerData = CreateEvent("GetPlayerData", "RemoteFunction")
-local GetPlotInfo = CreateEvent("GetPlotInfo", "RemoteFunction")
 
-print("DataTycoon: RemoteEvents created!")
+print("DataTycoon: RemoteEvents created ✓")
 
--- === CONFIGURATION ===
+-- ============================================================
+-- CONFIG
+-- ============================================================
 local CONFIG = {
     STARTING_DATA = 50,
-    BLOCK_REWARD = 5,
-    PASSIVE_INCOME = 1,  -- Data per second
-    
-    BASE_PLOT_PRICE = 60,
-    PLOT_PRICE_MULTIPLIER = 2.0,
-    MAX_PLOTS = 4,
-    PLOT_SIZE = 120,
-    PLOT_SPACING = 170,  -- 120 plot + 50 gap
-    PLOT_RANGE = 3,
-    
+    ORB_REWARD = 5,
+    PASSIVE_INCOME = 1,
+
     COMPUTER_TIERS = {
-        {name = "Budget Rig",    cost = 100,   dps = 2,   slots = 1},
-        {name = "Gaming PC",     cost = 500,   dps = 8,   slots = 2},
-        {name = "Server Rack",   cost = 2500,  dps = 30,  slots = 4},
-        {name = "Supercomputer", cost = 10000, dps = 120, slots = 8},
+        {name = "Budget Rig",    cost = 100,   dps = 2},
+        {name = "Gaming PC",     cost = 500,   dps = 8},
+        {name = "Server Rack",   cost = 2500,  dps = 30},
+        {name = "Supercomputer", cost = 10000, dps = 120},
     },
-    
+
     HOUSE_TIERS = {
-        {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
-        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 4},
-        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 8},
-        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 8},
+        {name = "Shack",         cost = 0,     maxComputers = 1, maxPlots = 2},
+        {name = "Small House",   cost = 300,   maxComputers = 2, maxPlots = 4},
+        {name = "Modern House",  cost = 1500,  maxComputers = 4, maxPlots = 8},
+        {name = "Tech Villa",    cost = 8000,  maxComputers = 8, maxPlots = 8},
         {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 8},
     },
-    
+
     DAILY_REWARDS = {50, 75, 100, 150, 200, 300, 500},
 }
 
--- === PLAYER DATA ===
+-- ============================================================
+-- PLAYER DATA
+-- ============================================================
 local PlayerData = {}
 
 local DEFAULT_DATA = {
     Data = CONFIG.STARTING_DATA,
     TotalEarned = CONFIG.STARTING_DATA,
     TotalSpent = 0,
-    Plots = {},         -- {plotId, ...}
-    Computers = {},     -- {tier = 1, plotId = "plot_0_0", ...}
+    Plots = {},
+    Computers = {},
     HouseTier = 1,
     LastLogin = 0,
     DailyStreak = 0,
@@ -92,48 +95,49 @@ local DEFAULT_DATA = {
     BlocksCollected = 0,
 }
 
--- === PLOT SYSTEM ===
+-- ============================================================
+-- PLOT SYSTEM
+-- ============================================================
 local Plots = {}
 
 local function InitPlots()
-    -- Only 8 specific plots: 4 corners + 4 edge midpoints
-    local plotCoords = {
-        {-3,-3},{-3,3},{3,-3},{3,3},  -- 4 corners
-        {0,-3},{0,3},{-3,0},{3,0},      -- 4 edge midpoints
+    local coords = {
+        {-3,-3},{-3,3},{3,-3},{3,3},
+        {0,-3},{0,3},{-3,0},{3,0},
     }
-    for _, coord in ipairs(plotCoords) do
-        local x, z = coord[1], coord[2]
+    for _, c in ipairs(coords) do
+        local x, z = c[1], c[2]
         local dist = math.max(math.abs(x), math.abs(z))
         local plotId = "plot_" .. x .. "_" .. z
-        local price = math.floor(CONFIG.BASE_PLOT_PRICE * (CONFIG.PLOT_PRICE_MULTIPLIER ^ dist))
+        local price = math.floor(50 * (2 ^ dist))
+        local spacing = 170
         Plots[plotId] = {
             id = plotId, owner = nil, ownerName = nil,
             x = x, z = z, dist = dist, price = price,
-            center = Vector3.new(x * CONFIG.PLOT_SPACING, 0.5, z * CONFIG.PLOT_SPACING),
+            center = Vector3.new(x * spacing, 0.5, z * spacing),
             computers = {},
         }
     end
     local count = 0
     for _ in pairs(Plots) do count = count + 1 end
-    print("DataTycoon: " .. count .. " plots (big, " .. CONFIG.PLOT_SPACING .. " spacing)")
+    print("DataTycoon: " .. count .. " plots initialized ✓")
 end
 
--- === DATA FUNCTIONS ===
-
+-- ============================================================
+-- DATA FUNCTIONS
+-- ============================================================
 local function LoadPlayerData(player)
     local key = "Player_" .. player.UserId
     local success, savedData = pcall(function()
         return DataStore:GetAsync(key)
     end)
-    
+
     if success and savedData then
         for k, v in pairs(DEFAULT_DATA) do
-            if savedData[k] == nil then
-                savedData[k] = v
-            end
+            if savedData[k] == nil then savedData[k] = v end
         end
         PlayerData[player.UserId] = savedData
-        print("DataTycoon: Loaded data for " .. player.Name .. " (Data: " .. savedData.Data .. ")")
+        print("DataTycoon: Loaded " .. player.Name .. " (Data: " .. savedData.Data .. ")")
     else
         PlayerData[player.UserId] = {}
         for k, v in pairs(DEFAULT_DATA) do
@@ -141,339 +145,180 @@ local function LoadPlayerData(player)
         end
         print("DataTycoon: New player " .. player.Name)
     end
-    
-    -- Restore plot ownership
-    for _, plot in pairs(Plots) do
-        for _, ownedId in ipairs(PlayerData[player.UserId].Plots or {}) do
-            if plot.id == ownedId then
-                plot.owner = player.UserId
-                plot.ownerName = player.Name
-            end
-        end
-    end
-    
-    -- Offline income
-    local now = os.time()
-    local lastLogin = PlayerData[player.UserId].LastLogin or now
-    local timeAway = math.max(0, now - lastLogin)
-    
-    if timeAway > 60 then
-        local totalDPS = 0
-        for _, computer in ipairs(PlayerData[player.UserId].Computers or {}) do
-            local tier = CONFIG.COMPUTER_TIERS[computer.tier]
-            if tier then
-                totalDPS = totalDPS + tier.dps
-            end
-        end
-        totalDPS = totalDPS + CONFIG.PASSIVE_INCOME
-        
-        local offlineEarnings = math.floor(totalDPS * timeAway * 0.5)
-        if offlineEarnings > 0 then
-            PlayerData[player.UserId].Data = PlayerData[player.UserId].Data + offlineEarnings
-            PlayerData[player.UserId].TotalEarned = PlayerData[player.UserId].TotalEarned + offlineEarnings
-            print("DataTycoon: " .. player.Name .. " earned " .. offlineEarnings .. " offline")
-        end
-    end
-    
-    PlayerData[player.UserId].LastLogin = now
-    
+
     -- Create leaderstats
     local leaderstats = Instance.new("Folder")
     leaderstats.Name = "leaderstats"
     leaderstats.Parent = player
-    
+
     local dataValue = Instance.new("IntValue")
     dataValue.Name = "Data"
     dataValue.Value = PlayerData[player.UserId].Data
     dataValue.Parent = leaderstats
-    
+
     local houseValue = Instance.new("IntValue")
     houseValue.Name = "House"
     houseValue.Value = PlayerData[player.UserId].HouseTier
     houseValue.Parent = leaderstats
-    
-    print("DataTycoon: Leaderstats for " .. player.Name .. " (Data: " .. PlayerData[player.UserId].Data .. ")")
+
+    print("DataTycoon: Leaderstats for " .. player.Name .. " = " .. PlayerData[player.UserId].Data .. " ✓")
 end
 
 local function SavePlayerData(player)
     if not PlayerData[player.UserId] then return end
     local key = "Player_" .. player.UserId
-    local success = pcall(function()
+    pcall(function()
         DataStore:SetAsync(key, PlayerData[player.UserId])
     end)
-    if success then
-        print("DataTycoon: Saved " .. player.Name)
-    else
-        warn("DataTycoon: Save failed for " .. player.Name)
-    end
 end
 
 local function UpdateData(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    
-    local leaderstats = player:FindFirstChild("leaderstats")
-    if leaderstats then
-        local dataValue = leaderstats:FindFirstChild("Data")
-        if dataValue then
-            dataValue.Value = data.Data
-        end
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then
+        local dv = ls:FindFirstChild("Data")
+        if dv then dv.Value = data.Data end
     end
     DataUpdated:FireClient(player, data.Data)
 end
 
-local function Notify(player, message, notifType)
-    Notification:FireClient(player, message, notifType or "info")
+local function Notify(player, msg, notifType)
+    Notification:FireClient(player, msg, notifType or "info")
 end
 
--- === EVENT HANDLERS ===
+-- ============================================================
+-- EVENT HANDLERS
+-- ============================================================
 
 ClaimDailyReward.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    
     local now = os.time()
     local lastClaim = data.LastDailyReward or 0
-    local daysSinceLast = math.floor((now - lastClaim) / 86400)
-    
-    if daysSinceLast == 0 then
-        Notify(player, "Already claimed today!", "error")
-        return
-    end
-    
-    if daysSinceLast > 1 then
-        data.DailyStreak = 1
-    else
-        data.DailyStreak = (data.DailyStreak or 0) + 1
-    end
-    
-    local rewardIndex = ((data.DailyStreak - 1) % #CONFIG.DAILY_REWARDS) + 1
-    local reward = CONFIG.DAILY_REWARDS[rewardIndex]
-    
+    local daysSince = math.floor((now - lastClaim) / 86400)
+    if daysSince == 0 then Notify(player, "Already claimed today!", "error") return end
+    if daysSince > 1 then data.DailyStreak = 1 else data.DailyStreak = (data.DailyStreak or 0) + 1 end
+    local idx = ((data.DailyStreak - 1) % #CONFIG.DAILY_REWARDS) + 1
+    local reward = CONFIG.DAILY_REWARDS[idx]
     data.Data = data.Data + reward
     data.TotalEarned = data.TotalEarned + reward
     data.LastDailyReward = now
-    
     UpdateData(player)
     DailyRewardClaimed:FireClient(player, reward, data.DailyStreak)
     Notify(player, "Day " .. data.DailyStreak .. ": +" .. reward .. " Data!", "success")
-    print("DataTycoon: " .. player.Name .. " daily reward " .. reward)
+    print("DataTycoon: " .. player.Name .. " daily reward +" .. reward)
 end)
 
-CollectBlocks.OnServerEvent:Connect(function(player, blockCount)
+-- Orb collection (from client touch or button)
+CollectOrb.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    
-    local reward = (blockCount or 1) * CONFIG.BLOCK_REWARD
-    data.Data = data.Data + reward
-    data.TotalEarned = data.TotalEarned + reward
-    data.BlocksCollected = (data.BlocksCollected or 0) + (blockCount or 1)
+    data.Data = data.Data + CONFIG.ORB_REWARD
+    data.TotalEarned = data.TotalEarned + CONFIG.ORB_REWARD
+    data.BlocksCollected = (data.BlocksCollected or 0) + 1
     UpdateData(player)
-    
-    Notify(player, "+" .. reward .. " Data!", "success")
+    Notify(player, "+" .. CONFIG.ORB_REWARD .. " Data!", "success")
+    print("DataTycoon: " .. player.Name .. " orb +" .. CONFIG.ORB_REWARD .. " (total: " .. data.Data .. ")")
 end)
 
 PurchasePlot.OnServerEvent:Connect(function(player, plotId)
     local plot = Plots[plotId]
-    if not plot then
-        Notify(player, "Plot not found!", "error")
-        return
-    end
-    
-    if plot.owner ~= nil then
-        Notify(player, "Plot already owned by " .. (plot.ownerName or "someone") .. "!", "error")
-        return
-    end
-    
+    if not plot then Notify(player, "Plot not found!", "error") return end
+    if plot.owner then Notify(player, "Already owned!", "error") return end
     local data = PlayerData[player.UserId]
     if not data then return end
-    
-    -- Check house tier plot limit
-    local houseTier = CONFIG.HOUSE_TIERS[data.HouseTier]
-    local plotCount = #data.Plots
-    if plotCount >= houseTier.maxPlots then
-        Notify(player, "Upgrade your house to buy more plots! (Max: " .. houseTier.maxPlots .. ")", "error")
-        return
-    end
-    
-    if plotCount >= CONFIG.MAX_PLOTS then
-        Notify(player, "Max plots reached!", "error")
-        return
-    end
-    
-    if data.Data < plot.price then
-        Notify(player, "Need " .. plot.price .. " Data! (You have " .. data.Data .. ")", "error")
-        return
-    end
-    
+    local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
+    if #data.Plots >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error") return end
+    if data.Data < plot.price then Notify(player, "Need " .. plot.price .. " Data!", "error") return end
     data.Data = data.Data - plot.price
     data.TotalSpent = data.TotalSpent + plot.price
     plot.owner = player.UserId
     plot.ownerName = player.Name
     table.insert(data.Plots, plotId)
-    
     UpdateData(player)
     PlotPurchased:FireAllClients(plotId, player.UserId, player.Name)
-    Notify(player, "Plot purchased! (-" .. plot.price .. " Data)", "success")
-    print("DataTycoon: " .. player.Name .. " bought " .. plotId .. " for " .. plot.price)
+    Notify(player, "Plot purchased! (-" .. plot.price .. ")", "success")
+    print("DataTycoon: " .. player.Name .. " bought " .. plotId)
 end)
 
 SellPlot.OnServerEvent:Connect(function(player, plotId)
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then
-        Notify(player, "You don't own this plot!", "error")
-        return
-    end
-    
+    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error") return end
     local data = PlayerData[player.UserId]
     if not data then return end
-    
     local sellPrice = math.floor(plot.price * 0.5)
     data.Data = data.Data + sellPrice
     data.TotalEarned = data.TotalEarned + sellPrice
-    plot.owner = nil
-    plot.ownerName = nil
-    
-    -- Remove from player's plots
-    for i, id in ipairs(data.Plots) do
-        if id == plotId then
-            table.remove(data.Plots, i)
-            break
-        end
-    end
-    
-    -- Remove computers on this plot
-    local removedComps = {}
-    for i = #data.Computers, 1, -1 do
-        if data.Computers[i].plotId == plotId then
-            table.insert(removedComps, data.Computers[i])
-            table.remove(data.Computers, i)
-        end
-    end
+    plot.owner = nil; plot.ownerName = nil
+    for i = #data.Plots, 1, -1 do if data.Plots[i] == plotId then table.remove(data.Plots, i) break end end
+    for i = #data.Computers, 1, -1 do if data.Computers[i].plotId == plotId then table.remove(data.Computers, i) end end
     plot.computers = {}
-    
     UpdateData(player)
     PlotSold:FireAllClients(plotId)
-    Notify(player, "Plot sold for " .. sellPrice .. " Data!", "success")
-    print("DataTycoon: " .. player.Name .. " sold " .. plotId .. " for " .. sellPrice)
+    Notify(player, "Sold for " .. sellPrice .. " Data!", "success")
 end)
 
 PlaceComputer.OnServerEvent:Connect(function(player, plotId, tier)
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then
-        Notify(player, "You don't own this plot!", "error")
-        return
-    end
-    
+    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error") return end
     local data = PlayerData[player.UserId]
     if not data then return end
-    
     tier = tier or 1
-    local computerTier = CONFIG.COMPUTER_TIERS[tier]
-    if not computerTier then
-        Notify(player, "Invalid computer tier!", "error")
-        return
-    end
-    
-    -- Check house tier computer limit
-    local houseTier = CONFIG.HOUSE_TIERS[data.HouseTier]
-    local computerCount = #data.Computers
-    if computerCount >= houseTier.maxComputers then
-        Notify(player, "Upgrade your house for more computers! (Max: " .. houseTier.maxComputers .. ")", "error")
-        return
-    end
-    
-    if data.Data < computerTier.cost then
-        Notify(player, "Need " .. computerTier.cost .. " Data! (You have " .. data.Data .. ")", "error")
-        return
-    end
-    
-    data.Data = data.Data - computerTier.cost
-    data.TotalSpent = data.TotalSpent + computerTier.cost
-    
-    local computer = {
-        tier = tier,
-        plotId = plotId,
-        name = computerTier.name,
-        dps = computerTier.dps,
-    }
-    table.insert(data.Computers, computer)
-    table.insert(plot.computers, computer)
-    
+    local ct = CONFIG.COMPUTER_TIERS[tier]
+    if not ct then Notify(player, "Invalid tier!", "error") return end
+    local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
+    if #data.Computers >= ht.maxComputers then Notify(player, "Upgrade house!", "error") return end
+    if data.Data < ct.cost then Notify(player, "Need " .. ct.cost .. " Data!", "error") return end
+    data.Data = data.Data - ct.cost
+    data.TotalSpent = data.TotalSpent + ct.cost
+    local comp = {tier = tier, plotId = plotId, name = ct.name, dps = ct.dps}
+    table.insert(data.Computers, comp)
+    table.insert(plot.computers, comp)
     UpdateData(player)
-    ComputerPlaced:FireClient(player, plotId, tier, computerTier.name)
-    Notify(player, computerTier.name .. " placed! (+" .. computerTier.dps .. " Data/sec)", "success")
-    print("DataTycoon: " .. player.Name .. " placed " .. computerTier.name .. " on " .. plotId)
+    ComputerPlaced:FireClient(player, plotId, tier, ct.name)
+    Notify(player, ct.name .. " placed! (+" .. ct.dps .. "/s)", "success")
+    print("DataTycoon: " .. player.Name .. " placed " .. ct.name)
 end)
 
 UpgradeHouse.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    
     local nextTier = data.HouseTier + 1
-    if nextTier > #CONFIG.HOUSE_TIERS then
-        Notify(player, "Max house level reached!", "error")
-        return
-    end
-    
-    local upgradeCost = CONFIG.HOUSE_TIERS[nextTier].cost
-    if data.Data < upgradeCost then
-        Notify(player, "Need " .. upgradeCost .. " Data! (You have " .. data.Data .. ")", "error")
-        return
-    end
-    
-    data.Data = data.Data - upgradeCost
-    data.TotalSpent = data.TotalSpent + upgradeCost
+    if nextTier > #CONFIG.HOUSE_TIERS then Notify(player, "Max level!", "error") return end
+    local cost = CONFIG.HOUSE_TIERS[nextTier].cost
+    if data.Data < cost then Notify(player, "Need " .. cost .. " Data!", "error") return end
+    data.Data = data.Data - cost
+    data.TotalSpent = data.TotalSpent + cost
     data.HouseTier = nextTier
-    
-    -- Update leaderstats
-    local leaderstats = player:FindFirstChild("leaderstats")
-    if leaderstats then
-        local houseValue = leaderstats:FindFirstChild("House")
-        if houseValue then
-            houseValue.Value = nextTier
-        end
-    end
-    
+    local ls = player:FindFirstChild("leaderstats")
+    if ls then local hv = ls:FindFirstChild("House") if hv then hv.Value = nextTier end end
     UpdateData(player)
     HouseUpgraded:FireClient(player, nextTier, CONFIG.HOUSE_TIERS[nextTier].name)
-    Notify(player, "House upgraded to " .. CONFIG.HOUSE_TIERS[nextTier].name .. "!", "success")
+    Notify(player, "Upgraded to " .. CONFIG.HOUSE_TIERS[nextTier].name .. "!", "success")
     print("DataTycoon: " .. player.Name .. " upgraded to " .. CONFIG.HOUSE_TIERS[nextTier].name)
 end)
-
--- === REMOTE FUNCTIONS ===
 
 GetPlayerData.OnServerInvoke = function(player)
     return PlayerData[player.UserId]
 end
 
-GetPlotInfo.OnServerInvoke = function(player, plotId)
-    local plot = Plots[plotId]
-    if not plot then return nil end
-    return {
-        id = plot.id,
-        owner = plot.owner,
-        ownerName = plot.ownerName,
-        price = plot.price,
-        x = plot.x,
-        z = plot.z,
-        computerCount = #plot.computers,
-    }
-end
+print("DataTycoon: Event handlers connected ✓")
 
--- === PASSIVE MINING ===
+-- ============================================================
+-- PASSIVE INCOME (1 Data/sec base + computers)
+-- ============================================================
 task.spawn(function()
+    print("DataTycoon: Passive income loop started ✓")
     while true do
         task.wait(1)
         for _, p in ipairs(Players:GetPlayers()) do
             local data = PlayerData[p.UserId]
             if data then
                 local totalDPS = CONFIG.PASSIVE_INCOME
-                for _, computer in ipairs(data.Computers) do
-                    local tier = CONFIG.COMPUTER_TIERS[computer.tier]
-                    if tier then
-                        totalDPS = totalDPS + tier.dps
-                    end
+                for _, comp in ipairs(data.Computers) do
+                    local tier = CONFIG.COMPUTER_TIERS[comp.tier]
+                    if tier then totalDPS = totalDPS + tier.dps end
                 end
                 data.Data = data.Data + totalDPS
                 data.TotalEarned = data.TotalEarned + totalDPS
@@ -483,25 +328,733 @@ task.spawn(function()
     end
 end)
 
--- === PLAYER CONNECTIONS ===
-
+-- ============================================================
+-- PLAYER CONNECTIONS
+-- ============================================================
 Players.PlayerAdded:Connect(function(player)
+    print("DataTycoon: Player joined: " .. player.Name)
     LoadPlayerData(player)
-    print("DataTycoon: " .. player.Name .. " joined!")
 end)
 
 Players.PlayerRemoving:Connect(function(player)
     SavePlayerData(player)
     PlayerData[player.UserId] = nil
-    print("DataTycoon: " .. player.Name .. " left")
+    print("DataTycoon: Player left: " .. player.Name)
 end)
 
 game:BindToClose(function()
-    for _, player in ipairs(Players:GetPlayers()) do
-        SavePlayerData(player)
-    end
+    for _, p in ipairs(Players:GetPlayers()) do SavePlayerData(p) end
 end)
+
+-- ============================================================
+-- WORLD BUILDING (runs immediately on server start)
+-- ============================================================
+print("DataTycoon: Building world...")
+
+-- Helper: create part with explicit properties
+local function makePart(props)
+    local p = Instance.new("Part")
+    p.Anchored = true
+    p.Name = props.name or "Part"
+    p.Size = props.size or Vector3.new(4, 4, 4)
+    p.Position = props.pos or Vector3.new(0, 0, 0)
+    p.BrickColor = props.color or BrickColor.new("Medium stone grey")
+    p.Material = props.mat or Enum.Material.SmoothPlastic
+    p.Transparency = props.alpha or 0
+    p.Shape = props.shape or Enum.PartType.Block
+    p.CanCollide = props.collide ~= nil and props.collide or true
+    p.Parent = props.parent or workspace
+    if props.rotation then
+        p.CFrame = CFrame.new(p.Position) * CFrame.Angles(0, math.rad(props.rotation), 0)
+    end
+    return p
+end
+
+-- Helper: create a PointLight inside a tiny anchor
+local function makeLight(pos, color, brightness, range)
+    local anchor = makePart({
+        name = "LightAnchor",
+        size = Vector3.new(0.1, 0.1, 0.1),
+        pos = pos,
+        alpha = 1,
+        collide = false,
+    })
+    local light = Instance.new("PointLight")
+    light.Color = color
+    light.Brightness = brightness
+    light.Range = range
+    light.Parent = anchor
+    return light
+end
+
+-- === BASEPLATE ===
+makePart({
+    name = "GrassBase",
+    size = Vector3.new(512, 4, 512),
+    pos = Vector3.new(0, -2, 0),
+    color = BrickColor.new("Dark green"),
+    mat = Enum.Material.Grass,
+})
+
+-- Spawn platform
+makePart({
+    name = "SpawnPlatform",
+    size = Vector3.new(14, 3, 14),
+    pos = Vector3.new(0, 1.5, 0),
+    color = BrickColor.new("Bright green"),
+    mat = Enum.Material.SmoothPlastic,
+})
+
+local spawnLoc = Instance.new("SpawnLocation")
+spawnLoc.Size = Vector3.new(10, 1, 10)
+spawnLoc.Position = Vector3.new(0, 3.5, 0)
+spawnLoc.Anchored = true
+spawnLoc.CanCollide = false
+spawnLoc.Transparency = 1
+spawnLoc.Parent = workspace
+
+print("DataTycoon: Baseplate done ✓")
+
+-- === CENTER DATA HUB ===
+local hubFolder = Instance.new("Folder")
+hubFolder.Name = "DataHub"
+hubFolder.Parent = workspace
+
+-- Hub platform
+makePart({
+    name = "HubPlatform",
+    size = Vector3.new(80, 3, 80),
+    pos = Vector3.new(0, 1.5, 0),
+    color = BrickColor.new("Dark stone grey"),
+    mat = Enum.Material.SmoothPlastic,
+    parent = hubFolder,
+})
+
+-- Hub ring
+makePart({
+    name = "HubRing",
+    size = Vector3.new(50, 0.3, 50),
+    pos = Vector3.new(0, 3.0, 0),
+    color = BrickColor.new("Medium stone grey"),
+    mat = Enum.Material.SmoothPlastic,
+    parent = hubFolder,
+})
+
+-- Tower floors
+for f = 0, 4 do
+    local y = 4 + f * 8
+    local sz = 22 - f * 2
+    local col = f % 2 == 0 and BrickColor.new("Dark stone grey") or BrickColor.new("Medium stone grey")
+    makePart({
+        name = "TowerFloor" .. f,
+        size = Vector3.new(sz, 7, sz),
+        pos = Vector3.new(0, y, 0),
+        color = col,
+        mat = Enum.Material.Metal,
+        parent = hubFolder,
+    })
+    makePart({
+        name = "TowerTrim" .. f,
+        size = Vector3.new(sz + 0.5, 0.15, sz + 0.5),
+        pos = Vector3.new(0, y - 3.3, 0),
+        color = BrickColor.new("Cyan"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+end
+
+-- Server racks
+for i = 1, 8 do
+    local a = (i / 8) * math.pi * 2
+    local x, z = math.cos(a) * 28, math.sin(a) * 28
+    makePart({
+        name = "ServerRack" .. i,
+        size = Vector3.new(6, 12, 3),
+        pos = Vector3.new(x, 7, z),
+        color = BrickColor.new("Dark stone grey"),
+        mat = Enum.Material.Metal,
+        parent = hubFolder,
+    })
+    for l = 0, 3 do
+        local ledCol = l % 2 == 0 and BrickColor.new("Lime green") or BrickColor.new("Forest green")
+        makePart({
+            name = "LED" .. i .. "_" .. l,
+            size = Vector3.new(0.4, 0.25, 0.4),
+            pos = Vector3.new(x, 3 + l * 2.5, z + 1.6),
+            color = ledCol,
+            mat = Enum.Material.SmoothPlastic,
+            parent = hubFolder,
+        })
+    end
+end
+
+-- Data stream pillars
+for i = 1, 6 do
+    local a = (i / 6) * math.pi * 2
+    local px, pz = math.cos(a) * 18, math.sin(a) * 18
+    makePart({
+        name = "DataPillar" .. i,
+        size = Vector3.new(3, 22, 3),
+        pos = Vector3.new(px, 12, pz),
+        color = BrickColor.new("Medium stone grey"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+    makePart({
+        name = "PillarTop" .. i,
+        size = Vector3.new(3.5, 0.4, 3.5),
+        pos = Vector3.new(px, 1.2, pz),
+        color = BrickColor.new("Cyan"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+end
+
+-- Floating orbs
+for i = 1, 10 do
+    local a = (i / 10) * math.pi * 2
+    local r = 12 + (i % 3) * 4
+    local col = i % 2 == 0 and BrickColor.new("Cyan") or BrickColor.new("Bright blue")
+    makePart({
+        name = "HubOrb" .. i,
+        size = Vector3.new(2, 2, 2),
+        pos = Vector3.new(math.cos(a) * r, 26 + math.sin(i) * 2, math.sin(a) * r),
+        color = col,
+        mat = Enum.Material.SmoothPlastic,
+        shape = Enum.PartType.Ball,
+        parent = hubFolder,
+    })
+end
+
+-- Entrance arches
+for i = 1, 4 do
+    local a = (i / 4) * math.pi * 2
+    local x, z = math.cos(a) * 42, math.sin(a) * 42
+    makePart({
+        name = "ArchPost" .. i,
+        size = Vector3.new(3, 16, 3),
+        pos = Vector3.new(x, 9, z),
+        color = BrickColor.new("Medium stone grey"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+    makePart({
+        name = "ArchTop" .. i,
+        size = Vector3.new(3, 2, 10),
+        pos = Vector3.new(x, 18, z),
+        color = BrickColor.new("Medium stone grey"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+    makePart({
+        name = "ArchAccent" .. i,
+        size = Vector3.new(3.2, 0.2, 10.2),
+        pos = Vector3.new(x, 19.1, z),
+        color = BrickColor.new("Cyan"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = hubFolder,
+    })
+end
+
+-- Hub lamps
+for i = 1, 8 do
+    local a = (i / 8) * math.pi * 2
+    local x, z = math.cos(a) * 35, math.sin(a) * 35
+    makePart({name = "LampPole" .. i, size = Vector3.new(0.5, 8, 0.5), pos = Vector3.new(x, 4, z), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Metal, parent = hubFolder})
+    makePart({name = "LampHead" .. i, size = Vector3.new(1.5, 0.5, 1.5), pos = Vector3.new(x, 8.2, z), color = BrickColor.new("Institutional white"), mat = Enum.Material.SmoothPlastic, parent = hubFolder})
+    makeLight(Vector3.new(x, 8.2, z), Color3.fromRGB(100, 200, 255), 1.5, 20)
+end
+
+print("DataTycoon: Hub done ✓")
+
+-- === WALKWAYS (4 cardinal) ===
+local walkFolder = Instance.new("Folder")
+walkFolder.Name = "Walkways"
+walkFolder.Parent = workspace
+
+local walkColor = BrickColor.new("Medium stone grey")
+local walkMat = Enum.Material.Concrete
+local walkWidth = 8
+
+for _, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
+    local dx, dz = d[1], d[2]
+    local mx, mz = dx * 157.5, dz * 157.5
+    if dx ~= 0 then
+        makePart({name = "Walkway", size = Vector3.new(230, 0.3, walkWidth), pos = Vector3.new(mx, 0.15, mz), color = walkColor, mat = walkMat, parent = walkFolder})
+    else
+        makePart({name = "Walkway", size = Vector3.new(walkWidth, 0.3, 230), pos = Vector3.new(mx, 0.15, mz), color = walkColor, mat = walkMat, parent = walkFolder})
+    end
+end
+
+print("DataTycoon: Walkways done ✓")
+
+-- === PLAYER PLOTS (8) ===
+local plotFolder = Instance.new("Folder")
+plotFolder.Name = "PlotMarkers"
+plotFolder.Parent = workspace
+local plotCount = 0
+
+for _, pp in ipairs({{-3,-3},{-3,3},{3,-3},{3,3},{0,-3},{0,3},{-3,0},{3,0}}) do
+    local x, z = pp[1], pp[2]
+    local dist = math.max(math.abs(x), math.abs(z))
+    local cx, cz = x * 170, z * 170
+    local price = math.floor(50 * (2 ^ dist))
+
+    makePart({
+        name = "Plot_" .. x .. "_" .. z,
+        size = Vector3.new(116, 0.6, 116),
+        pos = Vector3.new(cx, 0.3, cz),
+        color = BrickColor.new("Dark green"),
+        mat = Enum.Material.SmoothPlastic,
+        parent = plotFolder,
+    })
+
+    -- Corner posts
+    for _, c in ipairs({{55, 55}, {-55, 55}, {55, -55}, {-55, -55}}) do
+        makePart({name = "PlotPost", size = Vector3.new(1.2, 5, 1.2), pos = Vector3.new(cx + c[1], 3, cz + c[2]), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.SmoothPlastic, parent = plotFolder})
+    end
+
+    -- Fences
+    local edge = 60
+    if math.abs(x) >= 3 then
+        makePart({name = "PlotFence", size = Vector3.new(0.5, 3, 114), pos = Vector3.new(cx + (x > 0 and edge or -edge), 2, cz), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Wood, parent = plotFolder})
+    end
+    if math.abs(z) >= 3 then
+        makePart({name = "PlotFence", size = Vector3.new(114, 3, 0.5), pos = Vector3.new(cx, 2, cz + (z > 0 and edge or -edge)), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Wood, parent = plotFolder})
+    end
+
+    -- Sign
+    makePart({name = "SignPost", size = Vector3.new(0.6, 6, 0.6), pos = Vector3.new(cx, 3.5, cz), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.SmoothPlastic, parent = plotFolder})
+    makePart({name = "SignBoard", size = Vector3.new(8, 4, 0.3), pos = Vector3.new(cx, 7.5, cz), color = BrickColor.new("Medium stone grey"), mat = Enum.Material.SmoothPlastic, parent = plotFolder})
+
+    -- Sign billboard
+    local signAnchor = makePart({name = "SignData", size = Vector3.new(0.1, 0.1, 0.1), pos = Vector3.new(cx, 9.5, cz), alpha = 1, collide = false, parent = plotFolder})
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 150, 0, 80)
+    bb.StudsOffset = Vector3.new(0, 3, 0)
+    bb.AlwaysOnTop = false
+    bb.Parent = signAnchor
+    local t1 = Instance.new("TextLabel")
+    t1.Size = UDim2.new(1, 0, 0.22, 0)
+    t1.BackgroundTransparency = 1
+    t1.Text = "(" .. x .. ", " .. z .. ")"
+    t1.TextColor3 = Color3.fromRGB(200, 200, 200)
+    t1.TextSize = 12
+    t1.Font = Enum.Font.GothamBold
+    t1.TextStrokeTransparency = 0.5
+    t1.Parent = bb
+    local t2 = Instance.new("TextLabel")
+    t2.Size = UDim2.new(1, 0, 0.35, 0)
+    t2.Position = UDim2.new(0, 0, 0.22, 0)
+    t2.BackgroundTransparency = 1
+    t2.Text = "💰 " .. price
+    t2.TextColor3 = Color3.fromRGB(255, 220, 100)
+    t2.TextSize = 15
+    t2.Font = Enum.Font.GothamBold
+    t2.TextStrokeTransparency = 0.4
+    t2.Parent = bb
+    local t3 = Instance.new("TextLabel")
+    t3.Size = UDim2.new(1, 0, 0.23, 0)
+    t3.Position = UDim2.new(0, 0, 0.57, 0)
+    t3.BackgroundTransparency = 1
+    t3.Text = "🌿 PRIVATE"
+    t3.TextColor3 = Color3.fromRGB(100, 255, 150)
+    t3.TextSize = 11
+    t3.Font = Enum.Font.GothamBold
+    t3.TextStrokeTransparency = 0.5
+    t3.Parent = bb
+
+    plotCount = plotCount + 1
+end
+
+print("DataTycoon: " .. plotCount .. " plots done ✓")
+
+-- === DATA ORBS (48 total, 4 rings) ===
+local orbFolder = Instance.new("Folder")
+orbFolder.Name = "DataOrbs"
+orbFolder.Parent = workspace
+
+local PI = math.pi
+
+local function createOrb(cx, cy, cz, col)
+    -- Ground ring (collidable, opaque, neon)
+    local ring = makePart({
+        name = "OrbRing",
+        size = Vector3.new(8, 2, 8),
+        pos = Vector3.new(cx, 1, cz),
+        color = col,
+        mat = Enum.Material.Neon,
+        alpha = 0,
+        shape = Enum.PartType.Cylinder,
+        collide = true,
+        parent = orbFolder,
+    })
+    ring.CFrame = CFrame.new(cx, 1, cz) * CFrame.Angles(0, 0, math.rad(90))
+
+    -- Main orb (opaque neon sphere)
+    makePart({
+        name = "OrbSphere",
+        size = Vector3.new(4, 4, 4),
+        pos = Vector3.new(cx, cy, cz),
+        color = col,
+        mat = Enum.Material.Neon,
+        alpha = 0,
+        shape = Enum.PartType.Ball,
+        collide = false,
+        parent = orbFolder,
+    })
+
+    -- Core (white, opaque)
+    makePart({
+        name = "OrbCore",
+        size = Vector3.new(2, 2, 2),
+        pos = Vector3.new(cx, cy, cz),
+        color = BrickColor.new("Institutional white"),
+        mat = Enum.Material.Neon,
+        alpha = 0,
+        shape = Enum.PartType.Ball,
+        collide = false,
+        parent = orbFolder,
+    })
+
+    -- Light
+    makeLight(Vector3.new(cx, cy + 2, cz), col, 4, 25)
+
+    -- Star spikes
+    for i = 1, 4 do
+        local a = (i / 4) * PI * 2
+        makePart({
+            name = "OrbSpikes" .. i,
+            size = Vector3.new(0.5, 5, 0.5),
+            pos = Vector3.new(cx + math.cos(a) * 3.5, cy, cz + math.sin(a) * 3.5),
+            color = col,
+            mat = Enum.Material.Neon,
+            alpha = 0,
+            rotation = math.deg(-a),
+            collide = false,
+            parent = orbFolder,
+        })
+    end
+
+    -- Billboard
+    local bbp = makePart({
+        name = "OrbBillboard",
+        size = Vector3.new(0.1, 0.1, 0.1),
+        pos = Vector3.new(cx, cy, cz),
+        alpha = 1,
+        collide = false,
+        parent = orbFolder,
+    })
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 140, 0, 40)
+    bb.StudsOffset = Vector3.new(0, 5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = bbp
+    local lbl1 = Instance.new("TextLabel")
+    lbl1.Size = UDim2.new(1, 0, 0.6, 0)
+    lbl1.BackgroundTransparency = 1
+    lbl1.Text = "✦ +5 Data"
+    lbl1.TextColor3 = col
+    lbl1.TextSize = 16
+    lbl1.Font = Enum.Font.GothamBold
+    lbl1.TextStrokeTransparency = 0.1
+    lbl1.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+    lbl1.Parent = bb
+    local lbl2 = Instance.new("TextLabel")
+    lbl2.Size = UDim2.new(1, 0, 0.4, 0)
+    lbl2.Position = UDim2.new(0, 0, 0.6, 0)
+    lbl2.BackgroundTransparency = 1
+    lbl2.Text = "Walk to collect"
+    lbl2.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl2.TextSize = 11
+    lbl2.Font = Enum.Font.GothamBold
+    lbl2.TextStrokeTransparency = 0.3
+    lbl2.Parent = bb
+end
+
+-- Ring 1: Cyan (10 orbs, radius 55)
+for i = 1, 10 do
+    local a = (i / 10) * PI * 2
+    createOrb(math.cos(a) * 55, 6, math.sin(a) * 55, BrickColor.new("Cyan"))
+end
+-- Ring 2: Blue (12 orbs, radius 90)
+for i = 1, 12 do
+    local a = (i / 12) * PI * 2 + 0.3
+    createOrb(math.cos(a) * 90, 8, math.sin(a) * 90, BrickColor.new("Bright blue"))
+end
+-- Ring 3: Purple (14 orbs, radius 130)
+for i = 1, 14 do
+    local a = (i / 14) * PI * 2 + 0.15
+    createOrb(math.cos(a) * 130, 10, math.sin(a) * 130, BrickColor.new("Bright violet"))
+end
+-- Ring 4: Gold (12 orbs, radius 175)
+for i = 1, 12 do
+    local a = (i / 12) * PI * 2
+    createOrb(math.cos(a) * 175, 12, math.sin(a) * 175, BrickColor.new("Bright yellow"))
+end
+
+print("DataTycoon: 48 data orbs done ✓")
+
+-- === NATURE (trees, bushes, flowers, butterflies) ===
+local natureFolder = Instance.new("Folder")
+natureFolder.Name = "Nature"
+natureFolder.Parent = workspace
+
+local R = math.random
+
+-- Tree function
+local function plantTree(x, z, s)
+    s = s or 1
+    makePart({name = "TreeTrunk", size = Vector3.new(2.5*s, 10*s, 2.5*s), pos = Vector3.new(x, 5*s, z), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, parent = natureFolder})
+    makePart({name = "TreeCanopy1", size = Vector3.new(14*s, 10*s, 14*s), pos = Vector3.new(x, 13*s, z), color = BrickColor.new("Dark green"), mat = Enum.Material.Grass, shape = Enum.PartType.Ball, parent = natureFolder})
+    makePart({name = "TreeCanopy2", size = Vector3.new(10*s, 7*s, 10*s), pos = Vector3.new(x + 2*s, 17*s, z + 1*s), color = BrickColor.new("Earth green"), mat = Enum.Material.Grass, shape = Enum.PartType.Ball, parent = natureFolder})
+    makePart({name = "TreeCanopy3", size = Vector3.new(7*s, 5*s, 7*s), pos = Vector3.new(x - 1*s, 20*s, z - 2*s), color = BrickColor.new("Forest green"), mat = Enum.Material.Grass, shape = Enum.PartType.Ball, parent = natureFolder})
+end
+
+-- Bush function
+local function plantBush(x, z, s)
+    s = s or 1
+    for i = 1, 4 do
+        makePart({name = "Bush", size = Vector3.new(3*s, 2.5*s, 3*s), pos = Vector3.new(x + R(-2, 2), 1.25*s, z + R(-2, 2)), color = BrickColor.new("Dark green"), mat = Enum.Material.Grass, shape = Enum.PartType.Ball, parent = natureFolder})
+    end
+end
+
+-- Flower function (multi-petal, colorful)
+local function plantFlower(x, z)
+    local colors = {
+        BrickColor.new("Bright red"), BrickColor.new("Bright yellow"),
+        BrickColor.new("Bright violet"), BrickColor.new("Bright orange"),
+        BrickColor.new("Pink"), BrickColor.new("Cyan"),
+        BrickColor.new("Bright blue"), BrickColor.new("Hot pink"),
+    }
+    local col = colors[R(#colors)]
+    -- Stem
+    makePart({name = "FlowerStem", size = Vector3.new(0.3, 1.2, 0.3), pos = Vector3.new(x, 0.6, z), color = BrickColor.new("Dark green"), mat = Enum.Material.Grass, parent = natureFolder})
+    -- Center
+    makePart({name = "FlowerCenter", size = Vector3.new(0.7, 0.7, 0.7), pos = Vector3.new(x, 1.5, z), color = col, mat = Enum.Material.SmoothPlastic, shape = Enum.PartType.Ball, parent = natureFolder})
+    -- Petals
+    for i = 1, 6 do
+        local a = (i / 6) * PI * 2
+        makePart({name = "FlowerPetal", size = Vector3.new(0.5, 0.35, 0.5), pos = Vector3.new(x + math.cos(a) * 0.5, 1.4, z + math.sin(a) * 0.5), color = col, mat = Enum.Material.SmoothPlastic, shape = Enum.PartType.Ball, parent = natureFolder})
+    end
+end
+
+-- Rock function
+local function plantRock(x, z, s)
+    s = s or 1
+    makePart({name = "Rock", size = Vector3.new(3*s, 2*s, 3*s), pos = Vector3.new(x, 1*s, z), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Slate, shape = Enum.PartType.Ball, parent = natureFolder})
+end
+
+-- Butterfly function
+local function plantButterfly(x, z, col)
+    local h = 4 + R() * 3
+    makePart({name = "Butterfly", size = Vector3.new(1.5, 0.5, 2), pos = Vector3.new(x, h, z), color = col, mat = Enum.Material.SmoothPlastic, shape = Enum.PartType.Ball, alpha = 0, collide = false, parent = natureFolder})
+    makeLight(Vector3.new(x, h, z), col, 1, 8)
+end
+
+-- Forest clusters at corners
+for _, fc in ipairs({{-220, -220}, {220, -220}, {-220, 220}, {220, 220}}) do
+    for i = 1, 10 do plantTree(fc[1] + R(-30, 30), fc[2] + R(-30, 30), 0.6 + R() * 0.5) end
+    for i = 1, 5 do plantBush(fc[1] + R(-35, 35), fc[2] + R(-35, 35), 0.7 + R() * 0.5) end
+    for i = 1, 4 do plantRock(fc[1] + R(-25, 25), fc[2] + R(-25, 25), 0.5 + R() * 0.8) end
+    for i = 1, 8 do plantFlower(fc[1] + R(-35, 35), fc[2] + R(-35, 35)) end
+end
+
+-- Scattered trees
+for i = 1, 50 do
+    local tx, tz = R(-250, 250), R(-250, 250)
+    if math.abs(tx) > 40 or math.abs(tz) > 40 then plantTree(tx, tz, 0.5 + R() * 0.6) end
+end
+
+-- Bushes everywhere
+for i = 1, 80 do plantBush(R(-250, 250), R(-250, 250), 0.4 + R() * 0.6) end
+
+-- Flowers everywhere
+for i = 1, 200 do plantFlower(R(-250, 250), R(-250, 250)) end
+
+-- Rocks
+for i = 1, 35 do plantRock(R(-240, 240), R(-240, 240), 0.4 + R() * 1.0) end
+
+-- Butterflies
+local bflyCols = {
+    BrickColor.new("Bright yellow"), BrickColor.new("Bright blue"),
+    BrickColor.new("Bright violet"), BrickColor.new("Bright orange"),
+    BrickColor.new("Pink"), BrickColor.new("Cyan"),
+}
+for i = 1, 30 do
+    plantButterfly(R(-230, 230), R(-230, 230), bflyCols[R(#bflyCols)])
+end
+
+-- Trees along walkways
+for _, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
+    local dx, dz = d[1], d[2]
+    for dist = 50, 260, 15 do
+        local tx, tz = dx * dist, dz * dist
+        if dx == 0 then
+            plantTree(tx + 10, tz, 0.5 + R() * 0.3)
+            plantTree(tx - 10, tz, 0.5 + R() * 0.3)
+        else
+            plantTree(tx, tz + 10, 0.5 + R() * 0.3)
+            plantTree(tx, tz - 10, 0.5 + R() * 0.3)
+        end
+    end
+end
+
+-- Flowers along walkways
+for _, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
+    local dx, dz = d[1], d[2]
+    for dist = 45, 260, 45 do
+        local tx, tz = dx * dist, dz * dist
+        if dx == 0 then
+            plantFlower(tx + 12, tz)
+            plantFlower(tx - 12, tz)
+        else
+            plantFlower(tx, tz + 12)
+            plantFlower(tx, tz - 12)
+        end
+    end
+end
+
+-- Lamps along walkways
+for _, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
+    local dx, dz = d[1], d[2]
+    for dist = 60, 260, 25 do
+        local lx, lz = dx * dist, dz * dist
+        if dx == 0 then
+            makePart({name = "WalkLampPole", size = Vector3.new(0.5, 8, 0.5), pos = Vector3.new(lx + 9, 4, lz), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Metal})
+            makePart({name = "WalkLampHead", size = Vector3.new(1.5, 0.5, 1.5), pos = Vector3.new(lx + 9, 8.2, lz), color = BrickColor.new("Institutional white"), mat = Enum.Material.SmoothPlastic})
+            makeLight(Vector3.new(lx + 9, 8.2, lz), Color3.fromRGB(255, 240, 200), 1.5, 20)
+            makePart({name = "WalkLampPole", size = Vector3.new(0.5, 8, 0.5), pos = Vector3.new(lx - 9, 4, lz), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Metal})
+            makePart({name = "WalkLampHead", size = Vector3.new(1.5, 0.5, 1.5), pos = Vector3.new(lx - 9, 8.2, lz), color = BrickColor.new("Institutional white"), mat = Enum.Material.SmoothPlastic})
+            makeLight(Vector3.new(lx - 9, 8.2, lz), Color3.fromRGB(255, 240, 200), 1.5, 20)
+        else
+            makePart({name = "WalkLampPole", size = Vector3.new(0.5, 8, 0.5), pos = Vector3.new(lx, 4, lz + 9), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Metal})
+            makePart({name = "WalkLampHead", size = Vector3.new(1.5, 0.5, 1.5), pos = Vector3.new(lx, 8.2, lz + 9), color = BrickColor.new("Institutional white"), mat = Enum.Material.SmoothPlastic})
+            makeLight(Vector3.new(lx, 8.2, lz + 9), Color3.fromRGB(255, 240, 200), 1.5, 20)
+            makePart({name = "WalkLampPole", size = Vector3.new(0.5, 8, 0.5), pos = Vector3.new(lx, 4, lz - 9), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.Metal})
+            makePart({name = "WalkLampHead", size = Vector3.new(1.5, 0.5, 1.5), pos = Vector3.new(lx, 8.2, lz - 9), color = BrickColor.new("Institutional white"), mat = Enum.Material.SmoothPlastic})
+            makeLight(Vector3.new(lx, 8.2, lz - 9), Color3.fromRGB(255, 240, 200), 1.5, 20)
+        end
+    end
+end
+
+-- Benches along walkways
+for _, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
+    local dx, dz = d[1], d[2]
+    for dist = 90, 220, 50 do
+        local bx, bz = dx * dist, dz * dist
+        if dx == 0 then
+            makePart({name = "BenchSeat", size = Vector3.new(6, 0.5, 2), pos = Vector3.new(bx + 12, 2.5, bz), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 0})
+            makePart({name = "BenchBack", size = Vector3.new(6, 3, 0.5), pos = Vector3.new(bx + 12, 4.5, bz + 0.75), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 0})
+            makePart({name = "BenchSeat", size = Vector3.new(6, 0.5, 2), pos = Vector3.new(bx - 12, 2.5, bz), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 0})
+            makePart({name = "BenchBack", size = Vector3.new(6, 3, 0.5), pos = Vector3.new(bx - 12, 4.5, bz + 0.75), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 0})
+        else
+            makePart({name = "BenchSeat", size = Vector3.new(6, 0.5, 2), pos = Vector3.new(bx, 2.5, bz + 12), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 90})
+            makePart({name = "BenchBack", size = Vector3.new(6, 3, 0.5), pos = Vector3.new(bx, 4.5, bz + 12.75), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 90})
+            makePart({name = "BenchSeat", size = Vector3.new(6, 0.5, 2), pos = Vector3.new(bx, 2.5, bz - 12), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 90})
+            makePart({name = "BenchBack", size = Vector3.new(6, 3, 0.5), pos = Vector3.new(bx, 4.5, bz - 12.75), color = BrickColor.new("Brown"), mat = Enum.Material.Wood, rotation = 90})
+        end
+    end
+end
+
+print("DataTycoon: Nature + fauna done ✓")
+
+-- === WATER ===
+local waterFolder = Instance.new("Folder")
+waterFolder.Name = "Water"
+waterFolder.Parent = workspace
+
+local pond1 = makePart({name = "Pond1", size = Vector3.new(28, 0.5, 18), pos = Vector3.new(58, 0.2, 58), color = BrickColor.new("Bright blue"), mat = Enum.Material.Glass, shape = Enum.PartType.Cylinder, parent = waterFolder})
+pond1.CFrame = CFrame.new(58, 0.2, 58) * CFrame.Angles(0, 0, math.rad(90))
+for i = 1, 10 do local a = (i / 10) * PI * 2 plantRock(58 + math.cos(a) * 15, 58 + math.sin(a) * 10, 0.3 + R() * 0.3) end
+for i = 1, 6 do makePart({name = "Stream", size = Vector3.new(4, 0.3, 4), pos = Vector3.new(58 + i * 7, 0.15, 58 + i * 5), color = BrickColor.new("Bright blue"), mat = Enum.Material.Glass, parent = waterFolder}) end
+
+local pond2 = makePart({name = "Pond2", size = Vector3.new(16, 0.5, 12), pos = Vector3.new(-55, 0.2, -55), color = BrickColor.new("Bright blue"), mat = Enum.Material.Glass, shape = Enum.PartType.Cylinder, parent = waterFolder})
+pond2.CFrame = CFrame.new(-55, 0.2, -55) * CFrame.Angles(0, 0, math.rad(90))
+for i = 1, 6 do plantRock(-55 + math.cos((i / 6) * PI * 2) * 9, -55 + math.sin((i / 6) * PI * 2) * 7, 0.3) end
+
+print("DataTycoon: Water done ✓")
+
+-- === DECORATIVE BUILDINGS ===
+local buildFolder = Instance.new("Folder")
+buildFolder.Name = "Buildings"
+buildFolder.Parent = workspace
+for _, bp in ipairs({{62, -62, "Data Store"}, {-62, 62, "Tech Shop"}, {-62, -62, "Server Farm"}, {62, 62, "Mining Co"}}) do
+    makePart({name = "Building", size = Vector3.new(14, 11, 14), pos = Vector3.new(bp[1], 6, bp[2]), color = BrickColor.new("Medium stone grey"), mat = Enum.Material.SmoothPlastic, parent = buildFolder})
+    makePart({name = "Roof", size = Vector3.new(16, 1, 16), pos = Vector3.new(bp[1], 12, bp[2]), color = BrickColor.new("Dark stone grey"), mat = Enum.Material.SmoothPlastic, parent = buildFolder})
+    local sign = makePart({name = "BldgSign", size = Vector3.new(10, 2, 0.3), pos = Vector3.new(bp[1], 10, bp[2] + 7.2), color = BrickColor.new("Bright blue"), mat = Enum.Material.SmoothPlastic, parent = buildFolder})
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, 100, 0, 25)
+    bb.StudsOffset = Vector3.new(0, 1.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = sign
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, 0, 1, 0)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = "🏪 " .. bp[3]
+    lbl.TextColor3 = Color3.fromRGB(255, 255, 255)
+    lbl.TextSize = 13
+    lbl.Font = Enum.Font.GothamBold
+    lbl.TextStrokeTransparency = 0.3
+    lbl.Parent = bb
+end
+
+print("DataTycoon: Buildings done ✓")
+
+-- === LIGHTING ===
+local lt = game:GetService("Lighting")
+lt.Ambient = Color3.fromRGB(90, 90, 110)
+lt.OutdoorAmbient = Color3.fromRGB(110, 110, 130)
+lt.Brightness = 2.5
+lt.ClockTime = 14
+lt.FogEnd = 1000
+lt.FogColor = Color3.fromRGB(170, 190, 220)
+lt.GlobalShadows = true
+lt.ShadowSoftness = 0.3
+
+local bloom = Instance.new("BloomEffect")
+bloom.Intensity = 0.5
+bloom.Size = 35
+bloom.Threshold = 0.7
+bloom.Parent = lt
+
+local cc = Instance.new("ColorCorrectionEffect")
+cc.Brightness = 0.03
+cc.Contrast = 0.08
+cc.Saturation = 0.2
+cc.TintColor = Color3.fromRGB(210, 225, 255)
+cc.Parent = lt
+
+local sunrays = Instance.new("SunRaysEffect")
+sunrays.Intensity = 0.2
+sunrays.Spread = 0.9
+sunrays.Parent = lt
+
+local atmos = Instance.new("Atmosphere")
+atmos.Density = 0.25
+atmos.Offset = 0.1
+atmos.Color = Color3.fromRGB(180, 200, 230)
+atmos.Decay = 0.95
+atmos.Glare = 0.3
+atmos.Haze = 1.5
+atmos.Parent = lt
+
+local sky = Instance.new("Sky")
+sky.SkyboxBk = "rbxassetid://1007059817"
+sky.SkyboxDn = "rbxassetid://1007060023"
+sky.SkyboxFt = "rbxassetid://1007059817"
+sky.SkyboxLf = "rbxassetid://1007059817"
+sky.SkyboxRt = "rbxassetid://1007059817"
+sky.SkyboxUp = "rbxassetid://1007060023"
+sky.Parent = lt
+
+workspace.Gravity = 196.2
+workspace.FallenPartsDestroyHeight = -500
+
+print("DataTycoon: Lighting done ✓")
+print("========================================")
+print("DataTycoon v0.18 — SERVER READY! ✓")
+print("========================================")
 
 -- === INIT ===
 InitPlots()
-print("DataTycoon v0.6 server ready!")
