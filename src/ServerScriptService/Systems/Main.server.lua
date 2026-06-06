@@ -710,11 +710,11 @@ orbFolder.Parent = workspace
 local PI = math.pi
 
 local function createOrb(cx, cy, cz, col)
-    -- Ground ring (collidable, opaque, neon)
+    -- Ground ring (collidable, opaque, neon) — thick for visibility
     local ring = makePart({
         name = "OrbRing",
-        size = Vector3.new(8, 2, 8),
-        pos = Vector3.new(cx, 1, cz),
+        size = Vector3.new(10, 4, 10),
+        pos = Vector3.new(cx, 2, cz),
         color = col,
         mat = Enum.Material.Neon,
         alpha = 0,
@@ -750,8 +750,8 @@ local function createOrb(cx, cy, cz, col)
         parent = orbFolder,
     })
 
-    -- Light
-    makeLight(Vector3.new(cx, cy + 2, cz), col, 4, 25)
+    -- Light (brighter)
+    makeLight(Vector3.new(cx, cy + 2, cz), col, 6, 35)
 
     -- Star spikes
     for i = 1, 4 do
@@ -769,10 +769,10 @@ local function createOrb(cx, cy, cz, col)
         })
     end
 
-    -- Billboard
+    -- Billboard (size must be >=1 for BillboardGui to render reliably)
     local bbp = makePart({
         name = "OrbBillboard",
-        size = Vector3.new(0.1, 0.1, 0.1),
+        size = Vector3.new(1, 1, 1),
         pos = Vector3.new(cx, cy, cz),
         alpha = 1,
         collide = false,
