@@ -25,6 +25,10 @@
         },
         "Workspace": {
             "$className": "Workspace",
+            "$properties": {
+                "Gravity": 196.2,
+                "FallenPartsDestroyHeight": -500
+            },
             "$path": "src/Workspace"
         },
         "StarterGui": {
