@@ -417,6 +417,7 @@ end)
 -- ============================================================
 -- WORLD BUILDING
 -- ============================================================
+task.spawn(function()
 print("[BUILD] Starting world build...")
 
 -- Helper: create part with explicit properties
@@ -613,6 +614,7 @@ for i = 1, 8 do
 end
 
 print("[OK] Hub done")
+task.wait()
 
 -- === WALKWAYS (4 cardinal) ===
 local walkFolder = Instance.new("Folder")
@@ -634,6 +636,7 @@ for dirIdx, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
 end
 
 print("[OK] Walkways done")
+task.wait()
 
 -- === PLAYER PLOTS (8) ===
 local plotFolder = Instance.new("Folder")
@@ -715,6 +718,7 @@ for _, pp in ipairs({{-3,-3},{-3,3},{3,-3},{3,3},{0,-3},{0,3},{-3,0},{3,0}}) do
 end
 
 print("[OK] " .. plotCount .. " plots done")
+task.wait()
 
 -- === DATA ORBS (48 total, 4 rings) ===
 local orbFolder = Instance.new("Folder")
@@ -841,6 +845,7 @@ for i = 1, 12 do
 end
 
 print("[OK] 48 data orbs done")
+task.wait()
 
 -- === NATURE (trees, bushes, flowers, butterflies) ===
 local natureFolder = Instance.new("Folder")
@@ -1005,6 +1010,7 @@ for dirIdx, d in ipairs({{0, 1}, {0, -1}, {1, 0}, {-1, 0}}) do
 end
 
 print("[OK] Nature + fauna done")
+task.wait()
 
 -- === WATER ===
 local waterFolder = Instance.new("Folder")
@@ -1021,6 +1027,7 @@ pond2.CFrame = CFrame.new(-55, 0.2, -55) * CFrame.Angles(0, 0, math.rad(90))
 for i = 1, 6 do plantRock(-55 + math.cos((i / 6) * PI * 2) * 9, -55 + math.sin((i / 6) * PI * 2) * 7, 0.3) end
 
 print("[OK] Water done")
+task.wait()
 
 -- === DECORATIVE BUILDINGS ===
 local buildFolder = Instance.new("Folder")
@@ -1102,6 +1109,8 @@ print("[OK] Lighting done")
 print("=":rep(40))
 print("DataTycoon v0.19 — SERVER READY!")
 print("=":rep(40))
+
+end) -- end task.spawn world build
 
 -- === INIT ===
 InitPlots()
