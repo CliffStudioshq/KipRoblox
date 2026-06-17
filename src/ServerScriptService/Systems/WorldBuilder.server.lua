@@ -145,38 +145,17 @@ section("Terrain", function()
     end
     task.wait()
 
-    -- Mountain ring around the far edge (radius 280-350)
-    for i = 1, 24 do
-        local a = (i/24)*PI*2
-        local r = 290 + R(-20, 20)
+    -- Gentle rolling hills around the perimeter (no boulder mountains)
+    for i = 1, 16 do
+        local a = (i/16)*PI*2 + 0.2
+        local r = 185 + R(-15, 15)
         local mx, mz = math.cos(a)*r, math.sin(a)*r
-        local mh = R(40, 90) -- peak height
-        local mr = R(30, 55) -- base radius
-
-        -- Main peak (Rock material)
-        terrain:FillBall(Vector3.new(mx, mh*0.6, mz), mr, Enum.Material.Rock)
-        -- Snow cap on taller peaks
-        if mh > 65 then
-            terrain:FillBall(Vector3.new(mx, mh*0.9, mz), mr*0.35, Enum.Material.Snow)
-        end
-        -- Grassy base mound
-        terrain:FillBall(Vector3.new(mx, 8, mz), mr*0.7, Enum.Material.Grass)
-    end
-    task.wait()
-
-    -- Additional mid-distance hill clusters (radius 180-240)
-    for i = 1, 12 do
-        local a = (i/12)*PI*2 + 0.26
-        local r = 195 + R(-15, 15)
-        local mx, mz = math.cos(a)*r, math.sin(a)*r
-        terrain:FillBall(Vector3.new(mx, R(12, 30), mz), R(18, 32), Enum.Material.Grass)
+        terrain:FillBall(Vector3.new(mx, R(5, 14), mz), R(12, 22), Enum.Material.Grass)
     end
 
-    -- Animated grass decoration
-    terrain.Decoration = true
-    if terrain:FindFirstChild("GrassLength") then
-        terrain.GrassLength = 0.5
-    end
+    -- GrassLength is Studio-only, not scriptable — disable decoration
+    -- so the default giant grass blades don't appear
+    terrain.Decoration = false
 
     -- Terrain water: 4 small ponds using terrain (looks way better than Parts)
     for _, pc in ipairs({{75,75},{-75,-75},{75,-75},{-75,75}}) do

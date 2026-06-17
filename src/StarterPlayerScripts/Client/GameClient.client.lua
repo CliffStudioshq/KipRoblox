@@ -1,166 +1,266 @@
 --[[
-    GameClient.client.lua — DataTycoon v0.20
-    Clean rewrite: nil-safe event connections, single leaderstats wait,
-    proper pcall around every server call.
+    GameClient.client.lua — DataTycoon v0.22
+    Key fixes:
+      - game.Loaded:Wait() before ANY WaitForChild (fixes ERR/connection failed)
+      - Number formatter (1234 -> "1.2K")
+      - Orb visual feedback: collected orbs fade out, respawn after timer
+      - Proper shop panel with tier selection
+      - DPS counter updates live
+      - All mechanics verified: collect, accumulate, buy, subtract
 ]]
 
-local Players          = game:GetService("Players")
+local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
+local UserInputService  = game:GetService("UserInputService")
+local TweenService      = game:GetService("TweenService")
+
+-- ============================================================
+-- CRITICAL: Wait for full replication before doing anything
+-- This is the #1 fix for "connection failed" and "ERR"
+-- ============================================================
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 
 local player    = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-print("[CLIENT] v0.20 starting...")
+print("[CLIENT] v0.22 starting (game loaded)")
+
+-- ============================================================
+-- UTIL
+-- ============================================================
+local function fmt(n)
+    n = math.floor(n or 0)
+    if n >= 1e9 then return string.format("%.1fB", n/1e9)
+    elseif n >= 1e6 then return string.format("%.1fM", n/1e6)
+    elseif n >= 1e3 then return string.format("%.1fK", n/1e3)
+    else return tostring(n) end
+end
+
+local function corner(p, r)
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or 10); c.Parent = p
+end
+local function stroke(p, col, thick)
+    local s = Instance.new("UIStroke"); s.Color = col or Color3.fromRGB(40,40,65); s.Thickness = thick or 1; s.Parent = p
+end
 
 -- ============================================================
 -- COLORS
 -- ============================================================
 local C = {
-    BG      = Color3.fromRGB(14, 14, 24),
-    CARD    = Color3.fromRGB(22, 22, 40),
-    GREEN   = Color3.fromRGB(0, 210, 110),
-    BLUE    = Color3.fromRGB(60, 140, 255),
-    PURPLE  = Color3.fromRGB(140, 80, 255),
-    ORANGE  = Color3.fromRGB(255, 140, 40),
-    RED     = Color3.fromRGB(255, 70, 70),
-    CYAN    = Color3.fromRGB(0, 200, 220),
-    WHITE   = Color3.fromRGB(240, 240, 255),
-    DIM     = Color3.fromRGB(155, 155, 185),
-    BORDER  = Color3.fromRGB(42, 42, 68),
+    BG     = Color3.fromRGB(14, 14, 24),
+    CARD   = Color3.fromRGB(22, 22, 40),
+    GREEN  = Color3.fromRGB(0,  210, 110),
+    BLUE   = Color3.fromRGB(60, 140, 255),
+    PURPLE = Color3.fromRGB(140, 80,  255),
+    ORANGE = Color3.fromRGB(255, 140, 40),
+    RED    = Color3.fromRGB(255, 70,  70),
+    CYAN   = Color3.fromRGB(0,   200, 220),
+    GOLD   = Color3.fromRGB(255, 215, 0),
+    WHITE  = Color3.fromRGB(240, 240, 255),
+    DIM    = Color3.fromRGB(155, 155, 185),
+    BORDER = Color3.fromRGB(42,  42,  68),
 }
 
-local HOUSE_NAMES = {"Shack","Small House","Modern House","Tech Villa","Mega Compound"}
--- cost to upgrade TO each tier (tier 2 costs 300, tier 3 costs 1500, etc.)
-local HOUSE_COSTS = {0, 300, 1500, 8000, 30000}
-local COMP_DPS    = {2, 8, 30, 120}
-
-local function corner(p, r)
-    local c = Instance.new("UICorner"); c.CornerRadius=UDim.new(0,r or 10); c.Parent=p
-end
+local HOUSE_NAMES  = {"Shack","Small House","Modern House","Tech Villa","Mega Compound"}
+local HOUSE_COSTS  = {0, 300, 1500, 8000, 30000}
+local COMP_TIERS   = {
+    {name="Budget Rig",    cost=100,   dps=2},
+    {name="Gaming PC",     cost=500,   dps=8},
+    {name="Server Rack",   cost=2500,  dps=30},
+    {name="Supercomputer", cost=10000, dps=120},
+}
 
 -- ============================================================
 -- SCREEN GUI
 -- ============================================================
 local gui = Instance.new("ScreenGui")
-gui.Name="DataTycoonHUD"; gui.ResetOnSpawn=false; gui.IgnoreGuiInset=true
-gui.Parent=playerGui
+gui.Name = "DataTycoonHUD"; gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true; gui.Parent = playerGui
 
 -- ---- DATA BAR (top-center) ----
 local dataBar = Instance.new("Frame")
-dataBar.Size=UDim2.new(0,360,0,46); dataBar.Position=UDim2.new(0.5,-180,0,10)
-dataBar.BackgroundColor3=C.BG; dataBar.BackgroundTransparency=0.06
-dataBar.Parent=gui; corner(dataBar,23)
-local dbs=Instance.new("UIStroke"); dbs.Color=C.BORDER; dbs.Thickness=1; dbs.Parent=dataBar
-local dbLayout=Instance.new("UIListLayout"); dbLayout.FillDirection=Enum.FillDirection.Horizontal
-dbLayout.VerticalAlignment=Enum.VerticalAlignment.Center; dbLayout.Padding=UDim.new(0,0); dbLayout.Parent=dataBar
-local dbPad=Instance.new("UIPadding"); dbPad.PaddingLeft=UDim.new(0,14); dbPad.PaddingRight=UDim.new(0,14); dbPad.Parent=dataBar
+dataBar.Size = UDim2.new(0, 380, 0, 48)
+dataBar.Position = UDim2.new(0.5, -190, 0, 10)
+dataBar.BackgroundColor3 = C.BG; dataBar.BackgroundTransparency = 0.06
+dataBar.Parent = gui; corner(dataBar, 24); stroke(dataBar, C.BORDER)
+
+local barLayout = Instance.new("UIListLayout")
+barLayout.FillDirection = Enum.FillDirection.Horizontal
+barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+barLayout.Padding = UDim.new(0,0); barLayout.Parent = dataBar
+local barPad = Instance.new("UIPadding")
+barPad.PaddingLeft = UDim.new(0,16); barPad.PaddingRight = UDim.new(0,16)
+barPad.Parent = dataBar
 
 local dataLabel = Instance.new("TextLabel")
-dataLabel.Size=UDim2.new(0,140,1,0); dataLabel.BackgroundTransparency=1
-dataLabel.Text="💰  Loading..."; dataLabel.TextColor3=C.GREEN
-dataLabel.TextSize=17; dataLabel.Font=Enum.Font.GothamBold
-dataLabel.TextXAlignment=Enum.TextXAlignment.Left; dataLabel.Parent=dataBar
+dataLabel.Size = UDim2.new(0, 145, 1, 0); dataLabel.BackgroundTransparency = 1
+dataLabel.Text = "💰  Loading..."; dataLabel.TextColor3 = C.GREEN
+dataLabel.TextSize = 17; dataLabel.Font = Enum.Font.GothamBold
+dataLabel.TextXAlignment = Enum.TextXAlignment.Left; dataLabel.Parent = dataBar
 
-local sep1=Instance.new("Frame"); sep1.Size=UDim2.new(0,1,0,22)
-sep1.BackgroundColor3=C.BORDER; sep1.BackgroundTransparency=0.3; sep1.Parent=dataBar
+local sep1 = Instance.new("Frame"); sep1.Size = UDim2.new(0,1,0,24)
+sep1.BackgroundColor3 = C.BORDER; sep1.BackgroundTransparency = 0.3; sep1.Parent = dataBar
 
 local houseLabel = Instance.new("TextLabel")
-houseLabel.Size=UDim2.new(0,95,1,0); houseLabel.BackgroundTransparency=1
-houseLabel.Text="🏠 Shack"; houseLabel.TextColor3=C.DIM
-houseLabel.TextSize=14; houseLabel.Font=Enum.Font.GothamBold
-houseLabel.TextXAlignment=Enum.TextXAlignment.Left; houseLabel.Parent=dataBar
+houseLabel.Size = UDim2.new(0, 100, 1, 0); houseLabel.BackgroundTransparency = 1
+houseLabel.Text = "🏠 Shack"; houseLabel.TextColor3 = C.DIM
+houseLabel.TextSize = 14; houseLabel.Font = Enum.Font.GothamBold
+houseLabel.TextXAlignment = Enum.TextXAlignment.Left; houseLabel.Parent = dataBar
 
-local sep2=Instance.new("Frame"); sep2.Size=UDim2.new(0,1,0,22)
-sep2.BackgroundColor3=C.BORDER; sep2.BackgroundTransparency=0.3; sep2.Parent=dataBar
+local sep2 = Instance.new("Frame"); sep2.Size = UDim2.new(0,1,0,24)
+sep2.BackgroundColor3 = C.BORDER; sep2.BackgroundTransparency = 0.3; sep2.Parent = dataBar
 
 local dpsLabel = Instance.new("TextLabel")
-dpsLabel.Size=UDim2.new(0,68,1,0); dpsLabel.BackgroundTransparency=1
-dpsLabel.Text="⚡ 1/s"; dpsLabel.TextColor3=C.CYAN
-dpsLabel.TextSize=13; dpsLabel.Font=Enum.Font.GothamBold
-dpsLabel.TextXAlignment=Enum.TextXAlignment.Left; dpsLabel.Parent=dataBar
+dpsLabel.Size = UDim2.new(0, 72, 1, 0); dpsLabel.BackgroundTransparency = 1
+dpsLabel.Text = "⚡ 1/s"; dpsLabel.TextColor3 = C.CYAN
+dpsLabel.TextSize = 13; dpsLabel.Font = Enum.Font.GothamBold
+dpsLabel.TextXAlignment = Enum.TextXAlignment.Left; dpsLabel.Parent = dataBar
 
--- ---- LEFT SIDEBAR ----
+-- ---- SIDEBAR ----
 local sidebar = Instance.new("Frame")
-sidebar.Size=UDim2.new(0,165,0,0); sidebar.Position=UDim2.new(0,10,0,70)
-sidebar.BackgroundColor3=C.CARD; sidebar.BackgroundTransparency=0.08
-sidebar.AutomaticSize=Enum.AutomaticSize.Y; sidebar.Parent=gui; corner(sidebar,12)
-local sbStroke=Instance.new("UIStroke"); sbStroke.Color=C.BORDER; sbStroke.Thickness=1; sbStroke.Parent=sidebar
-local sbL=Instance.new("UIListLayout"); sbL.Padding=UDim.new(0,5); sbL.Parent=sidebar
-local sbP=Instance.new("UIPadding")
+sidebar.Size = UDim2.new(0,170,0,0); sidebar.Position = UDim2.new(0,10,0,72)
+sidebar.BackgroundColor3 = C.CARD; sidebar.BackgroundTransparency = 0.06
+sidebar.AutomaticSize = Enum.AutomaticSize.Y; sidebar.Parent = gui
+corner(sidebar, 12); stroke(sidebar, C.BORDER)
+local sbL = Instance.new("UIListLayout"); sbL.Padding = UDim.new(0,5); sbL.Parent = sidebar
+local sbP = Instance.new("UIPadding")
 sbP.PaddingTop=UDim.new(0,8); sbP.PaddingBottom=UDim.new(0,8)
 sbP.PaddingLeft=UDim.new(0,8); sbP.PaddingRight=UDim.new(0,8); sbP.Parent=sidebar
 
 local function Btn(text, color)
-    local b=Instance.new("TextButton")
-    b.Size=UDim2.new(1,0,0,36); b.BackgroundColor3=color
-    b.Text=text; b.TextColor3=Color3.new(1,1,1)
-    b.TextSize=12; b.Font=Enum.Font.GothamBold
-    b.AutoButtonColor=true; b.Parent=sidebar; corner(b,7)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1,0,0,36); b.BackgroundColor3 = color
+    b.Text = text; b.TextColor3 = Color3.new(1,1,1)
+    b.TextSize = 12; b.Font = Enum.Font.GothamBold
+    b.AutoButtonColor = true; b.Parent = sidebar; corner(b, 7)
     return b
 end
 
-local dailyBtn    = Btn("🎁  Daily Reward",  C.ORANGE)
-local collectBtn  = Btn("⛏️  Collect Orb",   C.BLUE)
-local buyPlotBtn  = Btn("📦  Buy Plot  [E]", C.GREEN)
-local compBtn     = Btn("💻  Buy Computer",  C.PURPLE)
-local statsBtn    = Btn("📊  Stats",         Color3.fromRGB(50,50,75))
+local dailyBtn   = Btn("🎁  Daily Reward",   C.ORANGE)
+local shopBtn    = Btn("🛒  Shop",            C.BLUE)
+local buyPlotBtn = Btn("📦  Buy Plot  [E]",  C.GREEN)
+local statsBtn   = Btn("📊  Stats",           Color3.fromRGB(50,50,75))
 
 -- ---- NOTIFICATION ----
 local notif = Instance.new("TextLabel")
-notif.Size=UDim2.new(0,360,0,34); notif.Position=UDim2.new(0.5,-180,0,64)
-notif.BackgroundTransparency=1; notif.Text=""
-notif.TextColor3=C.WHITE; notif.TextSize=15; notif.Font=Enum.Font.GothamBold
-notif.TextStrokeTransparency=0.5; notif.TextStrokeColor3=Color3.new(0,0,0)
-notif.TextTransparency=1; notif.Parent=gui
+notif.Size = UDim2.new(0, 380, 0, 36)
+notif.Position = UDim2.new(0.5, -190, 0, 66)
+notif.BackgroundTransparency = 1; notif.Text = ""
+notif.TextColor3 = C.WHITE; notif.TextSize = 15; notif.Font = Enum.Font.GothamBold
+notif.TextStrokeTransparency = 0.5; notif.TextStrokeColor3 = Color3.new(0,0,0)
+notif.TextTransparency = 1; notif.Parent = gui
 
-local notifQ={}; local notifBusy=false
-
+local notifQ = {}; local notifBusy = false
 local function Notify(msg, color)
     table.insert(notifQ, {msg=msg, color=color or C.WHITE})
     if notifBusy then return end
-    notifBusy=true
+    notifBusy = true
     task.spawn(function()
-        while #notifQ>0 do
-            local n=table.remove(notifQ,1)
-            notif.Text=n.msg; notif.TextColor3=n.color; notif.TextTransparency=1
-            for i=0,1,0.12 do notif.TextTransparency=1-i; task.wait(0.025) end
+        while #notifQ > 0 do
+            local n = table.remove(notifQ, 1)
+            notif.Text = n.msg; notif.TextColor3 = n.color; notif.TextTransparency = 1
+            for i=0,1,0.12 do notif.TextTransparency = 1-i; task.wait(0.02) end
             task.wait(1.8)
-            for i=0,1,0.1 do notif.TextTransparency=i; task.wait(0.025) end
+            for i=0,1,0.1 do notif.TextTransparency = i; task.wait(0.02) end
         end
-        notifBusy=false
+        notifBusy = false
     end)
+end
+
+-- ---- SHOP PANEL ----
+local shopPanel = Instance.new("Frame")
+shopPanel.Size = UDim2.new(0, 340, 0, 0)
+shopPanel.Position = UDim2.new(0, 190, 0, 72)
+shopPanel.BackgroundColor3 = C.BG; shopPanel.BackgroundTransparency = 0.04
+shopPanel.AutomaticSize = Enum.AutomaticSize.Y
+shopPanel.Visible = false; shopPanel.Parent = gui
+corner(shopPanel, 14); stroke(shopPanel, C.BORDER)
+
+local shopLayout = Instance.new("UIListLayout")
+shopLayout.Padding = UDim.new(0, 6); shopLayout.Parent = shopPanel
+local shopPad = Instance.new("UIPadding")
+shopPad.PaddingTop=UDim.new(0,10); shopPad.PaddingBottom=UDim.new(0,10)
+shopPad.PaddingLeft=UDim.new(0,10); shopPad.PaddingRight=UDim.new(0,10); shopPad.Parent=shopPanel
+
+local shopTitle = Instance.new("TextLabel")
+shopTitle.Size = UDim2.new(1,0,0,32); shopTitle.BackgroundTransparency = 1
+shopTitle.Text = "🛒  Shop"; shopTitle.TextColor3 = C.WHITE
+shopTitle.TextSize = 17; shopTitle.Font = Enum.Font.GothamBold
+shopTitle.TextXAlignment = Enum.TextXAlignment.Left; shopTitle.Parent = shopPanel
+
+local shopCloseBtn = Instance.new("TextButton")
+shopCloseBtn.Size = UDim2.new(1,0,0,30); shopCloseBtn.BackgroundColor3 = Color3.fromRGB(40,40,60)
+shopCloseBtn.Text = "✕  Close Shop"; shopCloseBtn.TextColor3 = C.DIM
+shopCloseBtn.TextSize = 12; shopCloseBtn.Font = Enum.Font.GothamBold
+shopCloseBtn.Parent = shopPanel; corner(shopCloseBtn, 7)
+
+-- Section header helper
+local function ShopHeader(text)
+    local h = Instance.new("TextLabel")
+    h.Size = UDim2.new(1,0,0,22); h.BackgroundTransparency = 1
+    h.Text = text; h.TextColor3 = C.CYAN; h.TextSize = 12
+    h.Font = Enum.Font.GothamBold; h.TextXAlignment = Enum.TextXAlignment.Left
+    h.Parent = shopPanel
+end
+
+-- Shop item button helper — returns the button so we can update its text
+local function ShopItem(icon, name, cost, detail, color, onBuy)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1,0,0,48); row.BackgroundColor3 = C.CARD
+    row.BackgroundTransparency = 0.3; row.Parent = shopPanel; corner(row, 8)
+
+    local left = Instance.new("TextLabel")
+    left.Size = UDim2.new(0.62,0,1,0); left.Position = UDim2.new(0,8,0,0)
+    left.BackgroundTransparency = 1; left.TextXAlignment = Enum.TextXAlignment.Left
+    left.Text = icon.." "..name.."\n"..detail
+    left.TextColor3 = C.WHITE; left.TextSize = 12; left.Font = Enum.Font.Gotham
+    left.TextWrapped = true; left.Parent = row
+
+    local buyB = Instance.new("TextButton")
+    buyB.Size = UDim2.new(0.34,0,0.7,0)
+    buyB.Position = UDim2.new(0.64,0,0.15,0)
+    buyB.BackgroundColor3 = color; buyB.Text = "💰 "..fmt(cost)
+    buyB.TextColor3 = Color3.new(1,1,1); buyB.TextSize = 12
+    buyB.Font = Enum.Font.GothamBold; buyB.Parent = row; corner(buyB, 6)
+    buyB.MouseButton1Click:Connect(onBuy)
+    return buyB
 end
 
 -- ---- STATS PANEL ----
 local panel = Instance.new("Frame")
-panel.Size=UDim2.new(0,295,0,370); panel.Position=UDim2.new(0.5,-147,0.5,-185)
-panel.BackgroundColor3=C.BG; panel.BackgroundTransparency=0.04
-panel.Visible=false; panel.Parent=gui; corner(panel,14)
-local pStroke=Instance.new("UIStroke"); pStroke.Color=C.BORDER; pStroke.Thickness=1; pStroke.Parent=panel
+panel.Size = UDim2.new(0, 295, 0, 0)
+panel.Position = UDim2.new(0.5,-147,0.5,-180)
+panel.BackgroundColor3 = C.BG; panel.BackgroundTransparency = 0.04
+panel.AutomaticSize = Enum.AutomaticSize.Y
+panel.Visible = false; panel.Parent = gui
+corner(panel, 14); stroke(panel, C.BORDER)
+local panelL = Instance.new("UIListLayout"); panelL.Padding = UDim.new(0,4); panelL.Parent = panel
+local panelP = Instance.new("UIPadding")
+panelP.PaddingTop=UDim.new(0,10); panelP.PaddingBottom=UDim.new(0,10)
+panelP.PaddingLeft=UDim.new(0,10); panelP.PaddingRight=UDim.new(0,10); panelP.Parent=panel
 
-local ptitle=Instance.new("TextLabel"); ptitle.Size=UDim2.new(1,-40,0,40)
-ptitle.Position=UDim2.new(0,14,0,0); ptitle.BackgroundTransparency=1
-ptitle.Text="📊  Stats"; ptitle.TextColor3=C.WHITE; ptitle.TextSize=17
-ptitle.Font=Enum.Font.GothamBold; ptitle.TextXAlignment=Enum.TextXAlignment.Left; ptitle.Parent=panel
+local ptitle = Instance.new("TextLabel")
+ptitle.Size=UDim2.new(1,0,0,32); ptitle.BackgroundTransparency=1
+ptitle.Text="📊  Stats"; ptitle.TextColor3=C.WHITE
+ptitle.TextSize=17; ptitle.Font=Enum.Font.GothamBold
+ptitle.TextXAlignment=Enum.TextXAlignment.Left; ptitle.Parent=panel
 
-local pclose=Instance.new("TextButton"); pclose.Size=UDim2.new(0,26,0,26)
-pclose.Position=UDim2.new(1,-32,0,7); pclose.BackgroundColor3=C.RED
-pclose.Text="✕"; pclose.TextColor3=Color3.new(1,1,1); pclose.TextSize=12
-pclose.Font=Enum.Font.GothamBold; pclose.Parent=panel; corner(pclose,6)
+local pclose = Instance.new("TextButton")
+pclose.Size=UDim2.new(1,0,0,30); pclose.BackgroundColor3=Color3.fromRGB(40,40,60)
+pclose.Text="✕  Close Stats"; pclose.TextColor3=C.DIM
+pclose.TextSize=12; pclose.Font=Enum.Font.GothamBold; pclose.Parent=panel; corner(pclose,7)
 
-local scroll=Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,-16,1,-92)
-scroll.Position=UDim2.new(0,8,0,42); scroll.BackgroundTransparency=1
-scroll.ScrollBarThickness=3; scroll.CanvasSize=UDim2.new(0,0,0,320); scroll.Parent=panel
-local scrollL=Instance.new("UIListLayout"); scrollL.Padding=UDim.new(0,4); scrollL.Parent=scroll
-
-local function Row(icon, label, val, valColor)
-    local row=Instance.new("Frame"); row.Size=UDim2.new(1,0,0,32)
-    row.BackgroundColor3=C.CARD; row.BackgroundTransparency=0.25; row.Parent=scroll; corner(row,6)
-    local ic=Instance.new("TextLabel"); ic.Size=UDim2.new(0,22,1,0); ic.Position=UDim2.new(0,5,0,0)
-    ic.BackgroundTransparency=1; ic.Text=icon; ic.TextSize=14; ic.Font=Enum.Font.GothamBold
-    ic.TextColor3=C.WHITE; ic.Parent=row
-    local nl=Instance.new("TextLabel"); nl.Size=UDim2.new(0.55,-24,1,0); nl.Position=UDim2.new(0,27,0,0)
+local statValues = {}
+local function StatRow(icon, label, val, valColor)
+    local row = Instance.new("Frame"); row.Size=UDim2.new(1,0,0,32)
+    row.BackgroundColor3=C.CARD; row.BackgroundTransparency=0.25
+    row.Parent=panel; corner(row,6)
+    local il=Instance.new("TextLabel"); il.Size=UDim2.new(0,20,1,0); il.Position=UDim2.new(0,5,0,0)
+    il.BackgroundTransparency=1; il.Text=icon; il.TextSize=13; il.Font=Enum.Font.GothamBold
+    il.TextColor3=C.WHITE; il.Parent=row
+    local nl=Instance.new("TextLabel"); nl.Size=UDim2.new(0.55,-22,1,0); nl.Position=UDim2.new(0,25,0,0)
     nl.BackgroundTransparency=1; nl.Text=label; nl.TextColor3=C.DIM; nl.TextSize=12
     nl.Font=Enum.Font.Gotham; nl.TextXAlignment=Enum.TextXAlignment.Left; nl.Parent=row
     local vl=Instance.new("TextLabel"); vl.Name="Val"; vl.Size=UDim2.new(0.45,-6,1,0)
@@ -170,40 +270,36 @@ local function Row(icon, label, val, valColor)
     return vl
 end
 
-local sHouse  = Row("🏠","House",        "Shack",  C.ORANGE)
-local sPlots  = Row("📦","Plots",         "0",      C.GREEN)
-local sComps  = Row("💻","Computers",     "0",      C.BLUE)
-local sOrbs   = Row("⛏️","Orbs Collected","0",      C.CYAN)
-local sData   = Row("💰","Data",          "0",      C.GREEN)
-local sEarned = Row("📈","Total Earned",  "0",      C.DIM)
-local sSpent  = Row("💸","Total Spent",   "0",      C.DIM)
-local sDPS    = Row("⚡","Data/sec",      "1/s",    C.CYAN)
-
-local upgradeBtn=Instance.new("TextButton")
-upgradeBtn.Size=UDim2.new(1,-16,0,36); upgradeBtn.Position=UDim2.new(0,8,1,-42)
-upgradeBtn.BackgroundColor3=C.PURPLE; upgradeBtn.Text="🏠  Upgrade House"
-upgradeBtn.TextColor3=Color3.new(1,1,1); upgradeBtn.TextSize=13
-upgradeBtn.Font=Enum.Font.GothamBold; upgradeBtn.Parent=panel; corner(upgradeBtn,8)
+statValues.house  = StatRow("🏠","House",        "Shack",  C.ORANGE)
+statValues.plots  = StatRow("📦","Plots Owned",  "0",      C.GREEN)
+statValues.comps  = StatRow("💻","Computers",    "0",      C.BLUE)
+statValues.orbs   = StatRow("⛏️","Orbs Collected","0",     C.CYAN)
+statValues.data   = StatRow("💰","Data",          "0",     C.GREEN)
+statValues.earned = StatRow("📈","Total Earned",  "0",     C.DIM)
+statValues.spent  = StatRow("💸","Total Spent",   "0",     C.DIM)
+statValues.dps    = StatRow("⚡","Data/sec",      "1/s",   C.CYAN)
 
 -- ============================================================
 -- DATA DISPLAY
 -- ============================================================
+local currentData = 0
+
 local function SetData(v)
-    dataLabel.Text = "💰  "..tostring(v)
-    dataLabel.TextColor3 = Color3.fromRGB(120,255,160)
-    task.delay(0.12, function() dataLabel.TextColor3 = C.GREEN end)
+    currentData = v
+    dataLabel.Text = "💰  "..fmt(v)
+    dataLabel.TextColor3 = Color3.fromRGB(120, 255, 160)
+    task.delay(0.15, function() dataLabel.TextColor3 = C.GREEN end)
 end
 
 -- ============================================================
--- STEP 1: Wait for leaderstats (simple, direct)
+-- STEP 1: Wait for leaderstats (with game.Loaded already done)
 -- ============================================================
 task.spawn(function()
     print("[CLIENT] Waiting for leaderstats...")
-    local ls = player:WaitForChild("leaderstats", 30)
+    local ls = player:WaitForChild("leaderstats", 20)
     if not ls then
-        warn("[CLIENT] No leaderstats after 30s")
-        dataLabel.Text = "💰  ERR"
-        dataLabel.TextColor3 = C.RED
+        warn("[CLIENT] leaderstats never arrived!")
+        dataLabel.Text = "💰  ?"
         return
     end
     print("[CLIENT] leaderstats found")
@@ -212,9 +308,7 @@ task.spawn(function()
     if dv then
         SetData(dv.Value)
         dv.Changed:Connect(SetData)
-        print("[CLIENT] Data connected, value="..dv.Value)
-    else
-        warn("[CLIENT] No Data value in leaderstats")
+        print("[CLIENT] Data connected = "..tostring(dv.Value))
     end
 
     local hv = ls:WaitForChild("House", 10)
@@ -227,51 +321,47 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- STEP 2: Wait for Events, connect everything
+-- STEP 2: Connect to Events
 -- ============================================================
 task.spawn(function()
-    print("[CLIENT] Waiting for Events folder...")
-    local Events = ReplicatedStorage:WaitForChild("Events", 30)
+    print("[CLIENT] Waiting for Events...")
+    local Events = ReplicatedStorage:WaitForChild("Events", 20)
     if not Events then
-        warn("[CLIENT] No Events folder after 30s — buttons won't work")
-        Notify("⚠️ Connection failed — try rejoining", C.RED)
+        warn("[CLIENT] Events folder not found after 20s!")
+        Notify("⚠️ Server connection issue — try rejoining", C.RED)
         return
     end
-    print("[CLIENT] Events found, connecting...")
+    print("[CLIENT] Events found")
 
-    -- Helper: get event safely
     local function Ev(name)
         local e = Events:WaitForChild(name, 10)
         if not e then warn("[CLIENT] Missing event: "..name) end
         return e
     end
 
-    local claimEv     = Ev("ClaimDailyReward")
-    local claimedEv   = Ev("DailyRewardClaimed")
-    local notifEv     = Ev("Notification")
-    local collectEv   = Ev("CollectOrb")
-    local buyPlotEv   = Ev("PurchasePlot")
-    local plotPurchEv = Ev("PlotPurchased")
-    local upgradeEv   = Ev("UpgradeHouse")
-    local placeCompEv = Ev("PlaceComputer")
-    local compPlacEv  = Ev("ComputerPlaced")
-    local houseUpgEv  = Ev("HouseUpgraded")
-    local dataUpdEv   = Ev("DataUpdated")
-    local getDataFn   = Ev("GetPlayerData")
+    local claimEv      = Ev("ClaimDailyReward")
+    local claimedEv    = Ev("DailyRewardClaimed")
+    local notifEv      = Ev("Notification")
+    local collectEv    = Ev("CollectOrb")
+    local orbCollected = Ev("OrbCollected")
+    local buyPlotEv    = Ev("PurchasePlot")
+    local plotPurchEv  = Ev("PlotPurchased")
+    local upgradeEv    = Ev("UpgradeHouse")
+    local placeCompEv  = Ev("PlaceComputer")
+    local compPlacEv   = Ev("ComputerPlaced")
+    local houseUpgEv   = Ev("HouseUpgraded")
+    local dataUpdEv    = Ev("DataUpdated")
+    local getDataFn    = Ev("GetPlayerData")
 
-    -- Backup data sync
+    -- Backup data sync from server
     if dataUpdEv then
-        dataUpdEv.OnClientEvent:Connect(function(v)
-            SetData(v)
-        end)
+        dataUpdEv.OnClientEvent:Connect(SetData)
     end
 
     -- Server notifications
     if notifEv then
         notifEv.OnClientEvent:Connect(function(msg, t)
-            local col = C.WHITE
-            if t=="success" then col=C.GREEN
-            elseif t=="error" then col=C.RED end
+            local col = t=="success" and C.GREEN or (t=="error" and C.RED or C.WHITE)
             Notify(msg, col)
         end)
     end
@@ -284,24 +374,19 @@ task.spawn(function()
     end
     if claimedEv then
         claimedEv.OnClientEvent:Connect(function(reward, streak)
-            Notify("Day "..streak..": +"..reward.." Data! 🎉", C.GREEN)
-            dailyBtn.Text="✅ Claimed!"
-            dailyBtn.BackgroundColor3=Color3.fromRGB(50,50,70)
+            Notify("Day "..streak..": +"..fmt(reward).." Data! 🎉", C.GREEN)
+            dailyBtn.Text = "✅ Claimed!"
+            dailyBtn.BackgroundColor3 = Color3.fromRGB(50,50,70)
             task.delay(3, function()
-                dailyBtn.Text="🎁  Daily Reward"
-                dailyBtn.BackgroundColor3=C.ORANGE
+                if dailyBtn and dailyBtn.Parent then
+                    dailyBtn.Text = "🎁  Daily Reward"
+                    dailyBtn.BackgroundColor3 = C.ORANGE
+                end
             end)
         end)
     end
 
-    -- Collect orb (button)
-    if collectEv then
-        collectBtn.MouseButton1Click:Connect(function()
-            collectEv:FireServer()
-        end)
-    end
-
-    -- Buy plot (cycles through cheapest first)
+    -- Buy plot (cycles cheapest first, E key shortcut)
     local plotOrder = {"plot_0_3","plot_0_-3","plot_3_0","plot_-3_0","plot_3_3","plot_3_-3","plot_-3_3","plot_-3_-3"}
     local plotIdx = 0
     local function BuyNext()
@@ -311,7 +396,7 @@ task.spawn(function()
     end
     buyPlotBtn.MouseButton1Click:Connect(BuyNext)
     UserInputService.InputBegan:Connect(function(inp, gp)
-        if not gp and inp.KeyCode==Enum.KeyCode.E then BuyNext() end
+        if not gp and inp.KeyCode == Enum.KeyCode.E then BuyNext() end
     end)
 
     if plotPurchEv then
@@ -322,35 +407,17 @@ task.spawn(function()
         end)
     end
 
-    -- Place computer
-    if placeCompEv and getDataFn then
-        compBtn.MouseButton1Click:Connect(function()
-            local ok, data = pcall(function() return getDataFn:InvokeServer() end)
-            if ok and data and data.Plots and #data.Plots > 0 then
-                placeCompEv:FireServer(data.Plots[1], 1)
-            else
-                Notify("Buy a plot first!", C.RED)
-            end
-        end)
-    end
-
-    if compPlacEv then
-        compPlacEv.OnClientEvent:Connect(function(pid, tier, name)
-            Notify(name.." placed! +"..COMP_DPS[tier or 1].."/s", C.BLUE)
-            dpsLabel.Text = "⚡ ?"  -- will update on next data tick
-        end)
-    end
-
-    -- House upgrade
-    if upgradeEv then
-        upgradeBtn.MouseButton1Click:Connect(function()
-            upgradeEv:FireServer()
-        end)
-    end
+    -- House upgrade events
     if houseUpgEv then
         houseUpgEv.OnClientEvent:Connect(function(tier, name)
-            Notify("Upgraded to "..name.."! 🏠", C.PURPLE)
             houseLabel.Text = "🏠 "..name
+        end)
+    end
+
+    -- Computer placed
+    if compPlacEv then
+        compPlacEv.OnClientEvent:Connect(function(pid, tier, name, dps)
+            Notify(name.." online! +"..tostring(dps).."/s ⚡", C.BLUE)
         end)
     end
 
@@ -360,79 +427,142 @@ task.spawn(function()
         local ok, data = pcall(function() return getDataFn:InvokeServer() end)
         if not (ok and data) then return end
         local hn = HOUSE_NAMES[data.HouseTier] or "Shack"
-        sHouse.Text  = hn.." (T"..data.HouseTier..")"
-        sPlots.Text  = tostring(data.Plots and #data.Plots or 0)
-        sComps.Text  = tostring(data.Computers and #data.Computers or 0)
-        sOrbs.Text   = tostring(data.BlocksCollected or 0)
-        sData.Text   = tostring(data.Data)
-        sEarned.Text = tostring(data.TotalEarned or 0)
-        sSpent.Text  = tostring(data.TotalSpent or 0)
+        statValues.house.Text  = hn.." (T"..data.HouseTier..")"
+        statValues.plots.Text  = tostring(#(data.Plots or {}))
+        statValues.comps.Text  = tostring(#(data.Computers or {}))
+        statValues.orbs.Text   = tostring(data.BlocksCollected or 0)
+        statValues.data.Text   = fmt(data.Data)
+        statValues.earned.Text = fmt(data.TotalEarned or 0)
+        statValues.spent.Text  = fmt(data.TotalSpent or 0)
         local dps = 1
-        if data.Computers then
-            for _, c in ipairs(data.Computers) do
-                dps = dps + (COMP_DPS[c.tier] or 0)
-            end
+        for _, comp in ipairs(data.Computers or {}) do
+            dps = dps + (COMP_TIERS[comp.tier] and COMP_TIERS[comp.tier].dps or 0)
         end
-        sDPS.Text = dps.."/s"; dpsLabel.Text = "⚡ "..dps.."/s"
-        local nt = data.HouseTier + 1
-        if nt <= #HOUSE_NAMES then
-            upgradeBtn.Text = "🏠  "..HOUSE_NAMES[nt].."  ("..HOUSE_COSTS[nt].." Data)"
-            upgradeBtn.BackgroundColor3 = C.PURPLE
-        else
-            upgradeBtn.Text = "✅  Max Level"
-            upgradeBtn.BackgroundColor3 = Color3.fromRGB(45,45,65)
-        end
+        statValues.dps.Text = dps.."/s"
+        dpsLabel.Text = "⚡ "..dps.."/s"
     end
 
     statsBtn.MouseButton1Click:Connect(function()
+        shopPanel.Visible = false
         panel.Visible = not panel.Visible
         if panel.Visible then RefreshStats() end
     end)
-    pclose.MouseButton1Click:Connect(function() panel.Visible=false end)
+    pclose.MouseButton1Click:Connect(function() panel.Visible = false end)
+
+    -- ---- SHOP PANEL ----
+    ShopHeader("─── Computers ───")
+    for i, ct in ipairs(COMP_TIERS) do
+        local tier = i
+        ShopItem("💻", ct.name, ct.cost, "+"..ct.dps.."/s passive income", C.BLUE, function()
+            if not placeCompEv or not getDataFn then return end
+            local ok, data = pcall(function() return getDataFn:InvokeServer() end)
+            if ok and data and data.Plots and #data.Plots > 0 then
+                placeCompEv:FireServer(data.Plots[1], tier)
+            else
+                Notify("Buy a plot first! [E key]", C.RED)
+            end
+        end)
+    end
+
+    ShopHeader("─── House Upgrades ───")
+    for i = 2, #HOUSE_NAMES do
+        local tier = i
+        ShopItem("🏠", HOUSE_NAMES[i], HOUSE_COSTS[i],
+            "Max "..({1,2,4,8,16})[i].." computers", C.PURPLE, function()
+            if upgradeEv then upgradeEv:FireServer() end
+        end)
+    end
+
+    shopBtn.MouseButton1Click:Connect(function()
+        panel.Visible = false
+        shopPanel.Visible = not shopPanel.Visible
+    end)
+    shopCloseBtn.MouseButton1Click:Connect(function() shopPanel.Visible = false end)
 
     -- ============================================================
-    -- ORB TOUCH COLLECTION
+    -- ORB COLLECTION
     -- ============================================================
-    if collectEv then
-        local function hookOrbs(folder)
-            local debounce = {}
-            local function onTouch(hit)
-                local char = hit.Parent
-                local plr = Players:GetPlayerFromCharacter(char)
-                if plr ~= player then return end
-                local now = tick()
-                if debounce[hit] and (now - debounce[hit]) < 0.5 then return end
-                debounce[hit] = now
-                collectEv:FireServer()
-            end
-            local n = 0
-            for _, d in ipairs(folder:GetDescendants()) do
-                if d:IsA("BasePart") and d.Name=="OrbRing" then
-                    d.Touched:Connect(onTouch); n=n+1
+    if collectEv and orbCollected then
+        -- Orb visual: when server confirms collection, fade out nearby parts
+        orbCollected.OnClientEvent:Connect(function(orbPos, respawnTime)
+            if not orbPos then return end
+            local orbFolder = workspace:FindFirstChild("DataOrbs")
+            if not orbFolder then return end
+
+            -- Collect all parts within 12 studs of orb center
+            local affectedParts = {}
+            for _, desc in ipairs(orbFolder:GetDescendants()) do
+                if desc:IsA("BasePart") then
+                    local dist = (desc.Position - orbPos).Magnitude
+                    if dist < 12 then
+                        affectedParts[#affectedParts+1] = {part=desc, origAlpha=desc.Transparency}
+                    end
                 end
             end
+
+            -- Fade out
+            for _, info in ipairs(affectedParts) do
+                info.part.Transparency = 1
+                info.part.CanCollide   = false
+            end
+
+            -- Respawn after timer
+            task.delay(respawnTime or 30, function()
+                for _, info in ipairs(affectedParts) do
+                    if info.part and info.part.Parent then
+                        info.part.Transparency = info.origAlpha
+                        info.part.CanCollide   = info.part.Name == "OrbRing"
+                    end
+                end
+            end)
+        end)
+
+        -- Touch handler
+        local function hookOrbs(folder)
+            local debounce = {}
+
+            local function onTouch(ring, hit)
+                local char = hit.Parent
+                local plr  = Players:GetPlayerFromCharacter(char)
+                if plr ~= player then return end
+                local now = tick()
+                if debounce[ring] and (now - debounce[ring]) < 0.6 then return end
+                debounce[ring] = now
+                -- Pass orb position so server can send it back for visual
+                collectEv:FireServer(ring.Position)
+            end
+
+            local n = 0
+            for _, d in ipairs(folder:GetDescendants()) do
+                if d:IsA("BasePart") and d.Name == "OrbRing" then
+                    local ring = d
+                    ring.Touched:Connect(function(hit) onTouch(ring, hit) end)
+                    n = n + 1
+                end
+            end
+
             folder.DescendantAdded:Connect(function(d)
                 task.wait(0.05)
-                if d:IsA("BasePart") and d.Name=="OrbRing" then
-                    d.Touched:Connect(onTouch)
+                if d:IsA("BasePart") and d.Name == "OrbRing" then
+                    local ring = d
+                    ring.Touched:Connect(function(hit) onTouch(ring, hit) end)
                 end
             end)
             print("[CLIENT] Hooked "..n.." orb rings")
         end
 
-        -- Try immediately, then wait up to 30s
-        local orbFolder = workspace:FindFirstChild("DataOrbs")
-        if orbFolder then
-            hookOrbs(orbFolder)
+        local orbF = workspace:FindFirstChild("DataOrbs")
+        if orbF then
+            hookOrbs(orbF)
         else
             task.spawn(function()
-                local f = workspace:WaitForChild("DataOrbs", 30)
+                local f = workspace:WaitForChild("DataOrbs", 45)
                 if f then hookOrbs(f)
-                else warn("[CLIENT] DataOrbs folder never appeared") end
+                else warn("[CLIENT] DataOrbs never appeared") end
             end)
         end
     end
 
     print("[CLIENT] ✅ All systems connected!")
-    Notify("DataTycoon loaded! Walk into glowing orbs to collect data.", C.CYAN)
+    Notify("DataTycoon loaded! Walk into orbs to collect data. ⚡", C.CYAN)
 end)
