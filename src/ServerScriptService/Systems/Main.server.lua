@@ -15,6 +15,41 @@ print("=":rep(40))
 print("DataTycoon v0.19 — Server starting...")
 print("=":rep(40))
 
+-- ============================================================
+-- CRITICAL: Create baseplate + spawn IMMEDIATELY so players
+-- never fall through before the rest of the world builds.
+-- ============================================================
+do
+    local base = Instance.new("Part")
+    base.Name = "GrassBase"
+    base.Size = Vector3.new(512, 4, 512)
+    base.Position = Vector3.new(0, -2, 0)
+    base.Anchored = true
+    base.CanCollide = true
+    base.BrickColor = BrickColor.new("Dark green")
+    base.Material = Enum.Material.Grass
+    base.Parent = workspace
+
+    local spawnPad = Instance.new("Part")
+    spawnPad.Name = "SpawnPlatform"
+    spawnPad.Size = Vector3.new(14, 3, 14)
+    spawnPad.Position = Vector3.new(0, 1.5, 0)
+    spawnPad.Anchored = true
+    spawnPad.BrickColor = BrickColor.new("Bright green")
+    spawnPad.Material = Enum.Material.SmoothPlastic
+    spawnPad.Parent = workspace
+
+    local spawnLoc = Instance.new("SpawnLocation")
+    spawnLoc.Size = Vector3.new(10, 1, 10)
+    spawnLoc.Position = Vector3.new(0, 3.5, 0)
+    spawnLoc.Anchored = true
+    spawnLoc.CanCollide = false
+    spawnLoc.Transparency = 1
+    spawnLoc.Parent = workspace
+
+    print("[OK] Baseplate + spawn created (early)")
+end
+
 local DataStore = DataStoreService:GetDataStore("DataTycoon_v4")
 
 -- ============================================================
@@ -424,33 +459,8 @@ local function makeLight(pos, color, brightness, range)
     return light
 end
 
--- === BASEPLATE ===
-makePart({
-    name = "GrassBase",
-    size = Vector3.new(512, 4, 512),
-    pos = Vector3.new(0, -2, 0),
-    color = BrickColor.new("Dark green"),
-    mat = Enum.Material.Grass,
-})
-
--- Spawn platform
-makePart({
-    name = "SpawnPlatform",
-    size = Vector3.new(14, 3, 14),
-    pos = Vector3.new(0, 1.5, 0),
-    color = BrickColor.new("Bright green"),
-    mat = Enum.Material.SmoothPlastic,
-})
-
-local spawnLoc = Instance.new("SpawnLocation")
-spawnLoc.Size = Vector3.new(10, 1, 10)
-spawnLoc.Position = Vector3.new(0, 3.5, 0)
-spawnLoc.Anchored = true
-spawnLoc.CanCollide = false
-spawnLoc.Transparency = 1
-spawnLoc.Parent = workspace
-
-print("[OK] Baseplate done")
+-- Baseplate + SpawnLocation already created at top of script (early init block).
+print("[OK] Baseplate already exists (created at startup)")
 
 -- === CENTER DATA HUB ===
 local hubFolder = Instance.new("Folder")
