@@ -248,7 +248,7 @@ statsScroll.CanvasSize = UDim2.new(0, 0, 0, 300)
 statsScroll.Parent = statsFrame
 
 local statsList = Instance.new("UIListLayout")
-statsList.Padding = UDim2.new(0, 0, 0, 5)
+statsList.Padding = UDim.new(0, 5)
 statsList.Parent = statsScroll
 
 local function AddRow(icon, label, value, valColor)

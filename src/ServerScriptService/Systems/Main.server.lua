@@ -395,7 +395,11 @@ local function makePart(props)
     p.Material = props.mat or Enum.Material.SmoothPlastic
     p.Transparency = props.alpha or 0
     p.Shape = props.shape or Enum.PartType.Block
-    p.CanCollide = props.collide ~= nil and props.collide or true
+    if props.collide ~= nil then
+        p.CanCollide = props.collide
+    else
+        p.CanCollide = true
+    end
     p.Parent = props.parent or workspace
     if props.rotation then
         p.CFrame = CFrame.new(p.Position) * CFrame.Angles(0, math.rad(props.rotation), 0)
@@ -787,7 +791,7 @@ local function createOrb(cx, cy, cz, col)
     lbl1.Size = UDim2.new(1, 0, 0.6, 0)
     lbl1.BackgroundTransparency = 1
     lbl1.Text = "✦ +5 Data"
-    lbl1.TextColor3 = col
+    lbl1.TextColor3 = col.Color
     lbl1.TextSize = 16
     lbl1.Font = Enum.Font.GothamBold
     lbl1.TextStrokeTransparency = 0.1
@@ -882,7 +886,7 @@ end
 local function plantButterfly(x, z, col)
     local h = 4 + R() * 3
     makePart({name = "Butterfly", size = Vector3.new(1.5, 0.5, 2), pos = Vector3.new(x, h, z), color = col, mat = Enum.Material.SmoothPlastic, shape = Enum.PartType.Ball, alpha = 0, collide = false, parent = natureFolder})
-    makeLight(Vector3.new(x, h, z), col, 1, 8)
+    makeLight(Vector3.new(x, h, z), col.Color, 1, 8)
 end
 
 -- Forest clusters at corners
