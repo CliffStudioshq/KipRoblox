@@ -1,92 +1,71 @@
 --[[
-    Main.server.lua — DataTycoon Server
-    v0.19 — Hardened rewrite
-    Fixes: walkway/lamp/bench parents, naming collisions, DataStore races,
-           debounce on orb collection, nil-data guard in passive loop,
-           proper cleanup on PlayerRemoving.
+    Main.server.lua — DataTycoon v0.21
+    Fixes:
+      - DataStore wrapped in pcall (was crashing entire script before Events created)
+      - Leaderstats folder parented LAST (fixes partial replication / ERR on client)
+      - GetPlayers() backfill after PlayerAdded (fixes Studio race condition)
+      - Retry logic on DataStore load
+      - Autosave every 60s
+      - UpdateAsync instead of SetAsync
 ]]
 
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local DataStoreService = game:GetService("DataStoreService")
-local ServerScriptService = game:GetService("ServerScriptService")
+local Players            = game:GetService("Players")
+local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local DataStoreService   = game:GetService("DataStoreService")
 
-print("=":rep(40))
-print("DataTycoon v0.19 — Server starting...")
-print("=":rep(40))
+print("=":rep(50))
+print("DataTycoon v0.21 — Server starting...")
+print("=":rep(50))
 
 -- ============================================================
--- CRITICAL: Create baseplate + spawn IMMEDIATELY so players
--- never fall through before the rest of the world builds.
+-- DATASTORE — wrapped in pcall so a failure doesn't kill the
+-- entire script before Events gets created
 -- ============================================================
-do
-    local base = Instance.new("Part")
-    base.Name = "GrassBase"
-    base.Size = Vector3.new(512, 4, 512)
-    base.Position = Vector3.new(0, -2, 0)
-    base.Anchored = true
-    base.CanCollide = true
-    base.BrickColor = BrickColor.new("Dark green")
-    base.Material = Enum.Material.Grass
-    base.Parent = workspace
-
-    local spawnPad = Instance.new("Part")
-    spawnPad.Name = "SpawnPlatform"
-    spawnPad.Size = Vector3.new(14, 3, 14)
-    spawnPad.Position = Vector3.new(0, 1.5, 0)
-    spawnPad.Anchored = true
-    spawnPad.BrickColor = BrickColor.new("Bright green")
-    spawnPad.Material = Enum.Material.SmoothPlastic
-    spawnPad.Parent = workspace
-
-    local spawnLoc = Instance.new("SpawnLocation")
-    spawnLoc.Size = Vector3.new(10, 1, 10)
-    spawnLoc.Position = Vector3.new(0, 3.5, 0)
-    spawnLoc.Anchored = true
-    spawnLoc.CanCollide = false
-    spawnLoc.Transparency = 1
-    spawnLoc.Parent = workspace
-
-    print("[OK] Baseplate + spawn created (early)")
+local DataStore = nil
+local dsOk, dsErr = pcall(function()
+    DataStore = DataStoreService:GetDataStore("DataTycoon_v4")
+end)
+if not dsOk then
+    warn("[DATA] DataStore unavailable: " .. tostring(dsErr))
+    warn("[DATA] Game will run but progress won't save. Enable API Services in Game Settings.")
 end
 
-local DataStore = DataStoreService:GetDataStore("DataTycoon_v4")
-
 -- ============================================================
--- CREATE REMOTE EVENTS
+-- CREATE REMOTE EVENTS (must happen early so client can find them)
 -- ============================================================
 local Events = Instance.new("Folder")
 Events.Name = "Events"
-Events.Parent = ReplicatedStorage
 
-local function CreateEvent(name, className)
-    local event = Instance.new(className or "RemoteEvent")
-    event.Name = name
-    event.Parent = Events
-    return event
+local function MakeEvent(name, cls)
+    local e = Instance.new(cls or "RemoteEvent")
+    e.Name = name
+    e.Parent = Events
+    return e
 end
 
 -- Client → Server
-local ClaimDailyReward = CreateEvent("ClaimDailyReward")
-local CollectOrb     = CreateEvent("CollectOrb")
-local PurchasePlot   = CreateEvent("PurchasePlot")
-local SellPlot       = CreateEvent("SellPlot")
-local PlaceComputer  = CreateEvent("PlaceComputer")
-local UpgradeHouse   = CreateEvent("UpgradeHouse")
+local ClaimDailyReward = MakeEvent("ClaimDailyReward")
+local CollectOrb       = MakeEvent("CollectOrb")
+local PurchasePlot     = MakeEvent("PurchasePlot")
+local SellPlot         = MakeEvent("SellPlot")
+local PlaceComputer    = MakeEvent("PlaceComputer")
+local UpgradeHouse     = MakeEvent("UpgradeHouse")
 
 -- Server → Client
-local DailyRewardClaimed = CreateEvent("DailyRewardClaimed")
-local Notification       = CreateEvent("Notification")
-local DataUpdated        = CreateEvent("DataUpdated")
-local PlotPurchased      = CreateEvent("PlotPurchased")
-local PlotSold           = CreateEvent("PlotSold")
-local ComputerPlaced     = CreateEvent("ComputerPlaced")
-local HouseUpgraded      = CreateEvent("HouseUpgraded")
+local DailyRewardClaimed = MakeEvent("DailyRewardClaimed")
+local Notification       = MakeEvent("Notification")
+local DataUpdated        = MakeEvent("DataUpdated")
+local PlotPurchased      = MakeEvent("PlotPurchased")
+local PlotSold           = MakeEvent("PlotSold")
+local ComputerPlaced     = MakeEvent("ComputerPlaced")
+local HouseUpgraded      = MakeEvent("HouseUpgraded")
 
--- Remote Function
-local GetPlayerData = CreateEvent("GetPlayerData", "RemoteFunction")
+-- Remote Function (client→server only — safe direction)
+local GetPlayerData = MakeEvent("GetPlayerData", "RemoteFunction")
 
-print("[OK] RemoteEvents created")
+-- Parent AFTER all children exist so client never finds an incomplete folder
+Events.Parent = ReplicatedStorage
+print("[OK] RemoteEvents created and replicated")
 
 -- ============================================================
 -- CONFIG
@@ -94,7 +73,7 @@ print("[OK] RemoteEvents created")
 local CONFIG = {
     STARTING_DATA  = 50,
     ORB_REWARD     = 5,
-    PASSIVE_INCOME = 1,
+    PASSIVE_INCOME = 1,  -- base data/sec
 
     COMPUTER_TIERS = {
         {name = "Budget Rig",    cost = 100,   dps = 2},
@@ -104,10 +83,10 @@ local CONFIG = {
     },
 
     HOUSE_TIERS = {
-        {name = "Shack",         cost = 0,     maxComputers = 1, maxPlots = 2},
-        {name = "Small House",   cost = 300,   maxComputers = 2, maxPlots = 4},
-        {name = "Modern House",  cost = 1500,  maxComputers = 4, maxPlots = 8},
-        {name = "Tech Villa",    cost = 8000,  maxComputers = 8, maxPlots = 8},
+        {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
+        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 4},
+        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 8},
+        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 8},
         {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 8},
     },
 
@@ -130,7 +109,46 @@ local DEFAULT_DATA = {
     DailyStreak = 0,
     LastDailyReward = 0,
     BlocksCollected = 0,
+    LastSeen = 0,
 }
+
+-- Deep copy defaults
+local function defaultData()
+    local d = {}
+    for k, v in pairs(DEFAULT_DATA) do
+        if type(v) == "table" then
+            d[k] = {}
+        else
+            d[k] = v
+        end
+    end
+    return d
+end
+
+-- Retry wrapper for DataStore
+local function dsGet(key)
+    if not DataStore then return nil end
+    for attempt = 1, 3 do
+        local ok, result = pcall(function() return DataStore:GetAsync(key) end)
+        if ok then return result end
+        warn("[DATA] GetAsync attempt "..attempt.." failed: "..tostring(result))
+        task.wait(1.5 ^ attempt)
+    end
+    return nil
+end
+
+local function dsSet(key, value)
+    if not DataStore then return false end
+    for attempt = 1, 3 do
+        local ok, err = pcall(function()
+            DataStore:UpdateAsync(key, function() return value end)
+        end)
+        if ok then return true end
+        warn("[DATA] UpdateAsync attempt "..attempt.." failed: "..tostring(err))
+        task.wait(1.5 ^ attempt)
+    end
+    return false
+end
 
 -- ============================================================
 -- PLOT SYSTEM
@@ -138,95 +156,113 @@ local DEFAULT_DATA = {
 local Plots = {}
 
 local function InitPlots()
-    local coords = {
-        {-3,-3},{-3,3},{3,-3},{3,3},
-        {0,-3},{0,3},{-3,0},{3,0},
-    }
+    local coords = {{-3,-3},{-3,3},{3,-3},{3,3},{0,-3},{0,3},{-3,0},{3,0}}
     for _, c in ipairs(coords) do
-        local x, z = c[1], c[2]
-        local dist = math.max(math.abs(x), math.abs(z))
-        local plotId = "plot_" .. x .. "_" .. z
-        local price = math.floor(50 * (2 ^ dist))
-        local spacing = 170
+        local x, z   = c[1], c[2]
+        local dist   = math.max(math.abs(x), math.abs(z))
+        local plotId = "plot_"..x.."_"..z
+        local price  = math.floor(50 * (2 ^ dist))
         Plots[plotId] = {
             id = plotId, owner = nil, ownerName = nil,
             x = x, z = z, dist = dist, price = price,
-            center = Vector3.new(x * spacing, 0.5, z * spacing),
+            center = Vector3.new(x * 170, 0.5, z * 170),
             computers = {},
         }
     end
-    local count = 0
-    for _ in pairs(Plots) do count = count + 1 end
-    print("[OK] " .. count .. " plots initialized")
+    local n = 0; for _ in pairs(Plots) do n = n + 1 end
+    print("[OK] "..n.." plots initialized")
 end
 
 -- ============================================================
 -- DATA FUNCTIONS
 -- ============================================================
 local function LoadPlayerData(player)
-    local key = "Player_" .. player.UserId
-    local success, savedData = pcall(function()
-        return DataStore:GetAsync(key)
-    end)
+    local key     = "Player_"..player.UserId
+    local saved   = dsGet(key)
+    local data
 
-    if success and savedData then
-        -- Merge saved data with defaults (handles new fields added in updates)
+    if saved then
+        -- Merge: add any new fields that didn't exist in older saves
         for k, v in pairs(DEFAULT_DATA) do
-            if savedData[k] == nil then savedData[k] = v end
+            if saved[k] == nil then
+                saved[k] = type(v) == "table" and {} or v
+            end
         end
-        PlayerData[player.UserId] = savedData
-        print("[DATA] Loaded " .. player.Name .. " (Data: " .. savedData.Data .. ")")
+        data = saved
+        print("[DATA] Loaded "..player.Name.." (Data: "..data.Data..")")
     else
-        PlayerData[player.UserId] = {}
-        for k, v in pairs(DEFAULT_DATA) do
-            PlayerData[player.UserId][k] = v
-        end
-        print("[DATA] New player " .. player.Name)
+        data = defaultData()
+        print("[DATA] New player "..player.Name)
     end
 
-    -- Create leaderstats
-    local leaderstats = Instance.new("Folder")
-    leaderstats.Name = "leaderstats"
-    leaderstats.Parent = player
+    -- Offline income: award up to 30min of passive income
+    local now = os.time()
+    if data.LastSeen and data.LastSeen > 0 then
+        local elapsed   = math.min(now - data.LastSeen, 1800) -- cap at 30min
+        local offlineDPS = CONFIG.PASSIVE_INCOME
+        for _, comp in ipairs(data.Computers or {}) do
+            local ct = CONFIG.COMPUTER_TIERS[comp.tier]
+            if ct then offlineDPS = offlineDPS + ct.dps end
+        end
+        local bonus = math.floor(elapsed * offlineDPS)
+        if bonus > 0 then
+            data.Data        = data.Data + bonus
+            data.TotalEarned = data.TotalEarned + bonus
+            print("[DATA] "..player.Name.." offline bonus: +"..bonus.." Data")
+        end
+    end
+    data.LastSeen = now
 
-    local dataValue = Instance.new("IntValue")
-    dataValue.Name = "Data"
-    dataValue.Value = PlayerData[player.UserId].Data
-    dataValue.Parent = leaderstats
+    PlayerData[player.UserId] = data
 
-    local houseValue = Instance.new("IntValue")
-    houseValue.Name = "House"
-    houseValue.Value = PlayerData[player.UserId].HouseTier
-    houseValue.Parent = leaderstats
+    -- Build leaderstats — add all children BEFORE parenting to player
+    -- so client never sees a partial folder
+    local ls = Instance.new("Folder")
+    ls.Name = "leaderstats"
 
-    print("[OK] Leaderstats for " .. player.Name .. " = " .. PlayerData[player.UserId].Data)
+    local dv = Instance.new("IntValue")
+    dv.Name  = "Data"
+    dv.Value = data.Data
+    dv.Parent = ls
+
+    local hv = Instance.new("IntValue")
+    hv.Name  = "House"
+    hv.Value = data.HouseTier
+    hv.Parent = ls
+
+    -- Parent folder last — atomic replication
+    ls.Parent = player
+    print("[OK] Leaderstats set for "..player.Name.." = "..data.Data)
 end
 
 local function SavePlayerData(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    local key = "Player_" .. player.UserId
-    local ok, err = pcall(function()
-        DataStore:SetAsync(key, data)
-    end)
-    if not ok then
-        warn("[DATA] Save failed for " .. player.Name .. ": " .. tostring(err))
+    data.LastSeen = os.time()
+    local key = "Player_"..player.UserId
+    local ok  = dsSet(key, data)
+    if ok then
+        print("[DATA] Saved "..player.Name)
+    else
+        warn("[DATA] Save FAILED for "..player.Name)
     end
 end
 
 local function UpdateData(player)
     local data = PlayerData[player.UserId]
     if not data then return end
+    -- Update leaderstats value (drives the leaderboard display)
     local ls = player:FindFirstChild("leaderstats")
     if ls then
         local dv = ls:FindFirstChild("Data")
         if dv then dv.Value = data.Data end
     end
+    -- Fire to client so the HUD updates immediately
     DataUpdated:FireClient(player, data.Data)
 end
 
-local function Notify(player, msg, notifType)
-    Notification:FireClient(player, msg, notifType or "info")
+local function Notify(player, msg, t)
+    Notification:FireClient(player, msg, t or "info")
 end
 
 -- ============================================================
@@ -236,81 +272,66 @@ end
 ClaimDailyReward.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]
     if not data then return end
-    local now = os.time()
-    local lastClaim = data.LastDailyReward or 0
-    local daysSince = math.floor((now - lastClaim) / 86400)
-    if daysSince == 0 then
-        Notify(player, "Already claimed today!", "error")
-        return
-    end
-    if daysSince > 1 then
-        data.DailyStreak = 1
-    else
-        data.DailyStreak = (data.DailyStreak or 0) + 1
-    end
-    local idx = ((data.DailyStreak - 1) % #CONFIG.DAILY_REWARDS) + 1
+    local now      = os.time()
+    local daysSince = math.floor((now - (data.LastDailyReward or 0)) / 86400)
+    if daysSince == 0 then Notify(player, "Already claimed today!", "error"); return end
+    if daysSince > 1 then data.DailyStreak = 1
+    else data.DailyStreak = (data.DailyStreak or 0) + 1 end
+    local idx    = ((data.DailyStreak - 1) % #CONFIG.DAILY_REWARDS) + 1
     local reward = CONFIG.DAILY_REWARDS[idx]
     data.Data = data.Data + reward
     data.TotalEarned = data.TotalEarned + reward
     data.LastDailyReward = now
     UpdateData(player)
     DailyRewardClaimed:FireClient(player, reward, data.DailyStreak)
-    Notify(player, "Day " .. data.DailyStreak .. ": +" .. reward .. " Data!", "success")
-    print("[GAME] " .. player.Name .. " daily reward +" .. reward)
+    Notify(player, "Day "..data.DailyStreak..": +"..reward.." Data!", "success")
 end)
 
--- Orb collection with server-side debounce
 local orbCooldowns = {}
-
 CollectOrb.OnServerEvent:Connect(function(player)
-    -- Debounce: prevent spam (0.3s cooldown per player)
     local now = tick()
-    if orbCooldowns[player.UserId] and (now - orbCooldowns[player.UserId]) < 0.3 then
-        return
-    end
+    if orbCooldowns[player.UserId] and (now - orbCooldowns[player.UserId]) < 0.3 then return end
     orbCooldowns[player.UserId] = now
-
     local data = PlayerData[player.UserId]
     if not data then return end
     data.Data = data.Data + CONFIG.ORB_REWARD
     data.TotalEarned = data.TotalEarned + CONFIG.ORB_REWARD
     data.BlocksCollected = (data.BlocksCollected or 0) + 1
     UpdateData(player)
-    Notify(player, "+" .. CONFIG.ORB_REWARD .. " Data!", "success")
-    print("[GAME] " .. player.Name .. " orb +" .. CONFIG.ORB_REWARD .. " (total: " .. data.Data .. ")")
+    Notify(player, "+"..CONFIG.ORB_REWARD.." Data!", "success")
 end)
 
 PurchasePlot.OnServerEvent:Connect(function(player, plotId)
+    if type(plotId) ~= "string" then return end
     local plot = Plots[plotId]
-    if not plot then Notify(player, "Plot not found!", "error") return end
-    if plot.owner then Notify(player, "Already owned!", "error") return end
+    if not plot then Notify(player, "Plot not found!", "error"); return end
+    if plot.owner then Notify(player, "Already owned!", "error"); return end
     local data = PlayerData[player.UserId]
     if not data then return end
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if #data.Plots >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error") return end
-    if data.Data < plot.price then Notify(player, "Need " .. plot.price .. " Data!", "error") return end
+    if #data.Plots >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error"); return end
+    if data.Data < plot.price then Notify(player, "Need "..plot.price.." Data!", "error"); return end
     data.Data = data.Data - plot.price
     data.TotalSpent = data.TotalSpent + plot.price
-    plot.owner = player.UserId
-    plot.ownerName = player.Name
+    plot.owner = player.UserId; plot.ownerName = player.Name
     table.insert(data.Plots, plotId)
     UpdateData(player)
     PlotPurchased:FireAllClients(plotId, player.UserId, player.Name)
-    Notify(player, "Plot purchased! (-" .. plot.price .. ")", "success")
-    print("[GAME] " .. player.Name .. " bought " .. plotId)
+    Notify(player, "Plot purchased! (-"..plot.price..")", "success")
+    print("[GAME] "..player.Name.." bought "..plotId)
 end)
 
 SellPlot.OnServerEvent:Connect(function(player, plotId)
+    if type(plotId) ~= "string" then return end
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error") return end
+    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error"); return end
     local data = PlayerData[player.UserId]
     if not data then return end
     local sellPrice = math.floor(plot.price * 0.5)
-    data.Data = data.Data + sellPrice
-    data.TotalEarned = data.TotalEarned + sellPrice
+    data.Data = data.Data + sellPrice; data.TotalEarned = data.TotalEarned + sellPrice
     plot.owner = nil; plot.ownerName = nil
     for i = #data.Plots, 1, -1 do
-        if data.Plots[i] == plotId then table.remove(data.Plots, i) break end
+        if data.Plots[i] == plotId then table.remove(data.Plots, i); break end
     end
     for i = #data.Computers, 1, -1 do
         if data.Computers[i].plotId == plotId then table.remove(data.Computers, i) end
@@ -318,40 +339,38 @@ SellPlot.OnServerEvent:Connect(function(player, plotId)
     plot.computers = {}
     UpdateData(player)
     PlotSold:FireAllClients(plotId)
-    Notify(player, "Sold for " .. sellPrice .. " Data!", "success")
+    Notify(player, "Sold for "..sellPrice.." Data!", "success")
 end)
 
 PlaceComputer.OnServerEvent:Connect(function(player, plotId, tier)
+    if type(plotId) ~= "string" then return end
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error") return end
+    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error"); return end
     local data = PlayerData[player.UserId]
     if not data then return end
-    tier = tier or 1
+    tier = (type(tier) == "number" and tier) or 1
     local ct = CONFIG.COMPUTER_TIERS[tier]
-    if not ct then Notify(player, "Invalid tier!", "error") return end
+    if not ct then Notify(player, "Invalid tier!", "error"); return end
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if #data.Computers >= ht.maxComputers then Notify(player, "Upgrade house!", "error") return end
-    if data.Data < ct.cost then Notify(player, "Need " .. ct.cost .. " Data!", "error") return end
-    data.Data = data.Data - ct.cost
-    data.TotalSpent = data.TotalSpent + ct.cost
-    local comp = {tier = tier, plotId = plotId, name = ct.name, dps = ct.dps}
-    table.insert(data.Computers, comp)
-    table.insert(plot.computers, comp)
+    if #data.Computers >= ht.maxComputers then Notify(player, "Upgrade house!", "error"); return end
+    if data.Data < ct.cost then Notify(player, "Need "..ct.cost.." Data!", "error"); return end
+    data.Data = data.Data - ct.cost; data.TotalSpent = data.TotalSpent + ct.cost
+    local comp = {tier=tier, plotId=plotId, name=ct.name, dps=ct.dps}
+    table.insert(data.Computers, comp); table.insert(plot.computers, comp)
     UpdateData(player)
     ComputerPlaced:FireClient(player, plotId, tier, ct.name)
-    Notify(player, ct.name .. " placed! (+" .. ct.dps .. "/s)", "success")
-    print("[GAME] " .. player.Name .. " placed " .. ct.name)
+    Notify(player, ct.name.." placed! (+"..ct.dps.."/s)", "success")
+    print("[GAME] "..player.Name.." placed "..ct.name)
 end)
 
 UpgradeHouse.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]
     if not data then return end
     local nextTier = data.HouseTier + 1
-    if nextTier > #CONFIG.HOUSE_TIERS then Notify(player, "Max level!", "error") return end
+    if nextTier > #CONFIG.HOUSE_TIERS then Notify(player, "Max level!", "error"); return end
     local cost = CONFIG.HOUSE_TIERS[nextTier].cost
-    if data.Data < cost then Notify(player, "Need " .. cost .. " Data!", "error") return end
-    data.Data = data.Data - cost
-    data.TotalSpent = data.TotalSpent + cost
+    if data.Data < cost then Notify(player, "Need "..cost.." Data!", "error"); return end
+    data.Data = data.Data - cost; data.TotalSpent = data.TotalSpent + cost
     data.HouseTier = nextTier
     local ls = player:FindFirstChild("leaderstats")
     if ls then
@@ -360,10 +379,10 @@ UpgradeHouse.OnServerEvent:Connect(function(player)
     end
     UpdateData(player)
     HouseUpgraded:FireClient(player, nextTier, CONFIG.HOUSE_TIERS[nextTier].name)
-    Notify(player, "Upgraded to " .. CONFIG.HOUSE_TIERS[nextTier].name .. "!", "success")
-    print("[GAME] " .. player.Name .. " upgraded to " .. CONFIG.HOUSE_TIERS[nextTier].name)
+    Notify(player, "Upgraded to "..CONFIG.HOUSE_TIERS[nextTier].name.."!", "success")
 end)
 
+-- Safe: client invoking server is fine, never InvokeClient
 GetPlayerData.OnServerInvoke = function(player)
     return PlayerData[player.UserId]
 end
@@ -371,24 +390,22 @@ end
 print("[OK] Event handlers connected")
 
 -- ============================================================
--- PASSIVE INCOME (1 Data/sec base + computers)
+-- PASSIVE INCOME LOOP (server-side, in-memory only)
 -- ============================================================
 task.spawn(function()
-    print("[OK] Passive income loop started")
+    print("[OK] Passive income loop running")
     while true do
         task.wait(1)
         for _, p in ipairs(Players:GetPlayers()) do
             local data = PlayerData[p.UserId]
             if data then
-                local totalDPS = CONFIG.PASSIVE_INCOME
-                if data.Computers then
-                    for _, comp in ipairs(data.Computers) do
-                        local tier = CONFIG.COMPUTER_TIERS[comp.tier]
-                        if tier then totalDPS = totalDPS + tier.dps end
-                    end
+                local dps = CONFIG.PASSIVE_INCOME
+                for _, comp in ipairs(data.Computers or {}) do
+                    local ct = CONFIG.COMPUTER_TIERS[comp.tier]
+                    if ct then dps = dps + ct.dps end
                 end
-                data.Data = data.Data + totalDPS
-                data.TotalEarned = data.TotalEarned + totalDPS
+                data.Data        = data.Data + dps
+                data.TotalEarned = data.TotalEarned + dps
                 UpdateData(p)
             end
         end
@@ -396,25 +413,54 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- PLAYER CONNECTIONS
+-- AUTOSAVE every 60 seconds
 -- ============================================================
-Players.PlayerAdded:Connect(function(player)
-    print("[JOIN] " .. player.Name)
-    LoadPlayerData(player)
+task.spawn(function()
+    while true do
+        task.wait(60)
+        for _, p in ipairs(Players:GetPlayers()) do
+            task.spawn(SavePlayerData, p)
+        end
+        print("[DATA] Autosave complete")
+    end
 end)
 
+-- ============================================================
+-- PLAYER CONNECTIONS
+-- ============================================================
+local function onPlayerAdded(player)
+    print("[JOIN] "..player.Name)
+    task.spawn(LoadPlayerData, player)
+end
+
+Players.PlayerAdded:Connect(onPlayerAdded)
+
+-- CRITICAL: backfill players already in game (Studio race condition fix)
+for _, p in ipairs(Players:GetPlayers()) do
+    task.spawn(onPlayerAdded, p)
+end
+
 Players.PlayerRemoving:Connect(function(player)
-    print("[LEAVE] " .. player.Name)
-    SavePlayerData(player)
-    PlayerData[player.UserId] = nil
-    orbCooldowns[player.UserId] = nil
+    print("[LEAVE] "..player.Name)
+    task.spawn(SavePlayerData, player)
+    task.delay(3, function()
+        PlayerData[player.UserId]   = nil
+        orbCooldowns[player.UserId] = nil
+    end)
 end)
 
 game:BindToClose(function()
-    for _, p in ipairs(Players:GetPlayers()) do SavePlayerData(p) end
+    print("[DATA] Server closing — saving all players...")
+    for _, p in ipairs(Players:GetPlayers()) do
+        SavePlayerData(p)
+    end
+    print("[DATA] All players saved")
 end)
 
--- World is built by WorldBuilder.server.lua (separate script, own budget)
-
--- === INIT ===
+-- ============================================================
+-- INIT
+-- ============================================================
 InitPlots()
+print("=":rep(50))
+print("DataTycoon v0.21 — SERVER READY")
+print("=":rep(50))
