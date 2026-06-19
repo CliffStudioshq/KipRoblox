@@ -248,6 +248,11 @@ local function SavePlayerData(player)
     dsSet("Player_"..player.UserId, data)
 end
 
+-- Some saved data fields may be missing or nil; using # on nil will error.
+local function safeLen(t)
+    return (type(t) == "table") and #t or 0
+end
+
 local function UpdateData(player)
     local data = PlayerData[player.UserId]
     if not data then return end
@@ -286,18 +291,33 @@ end)
 
 local orbCooldowns = {}
 CollectOrb.OnServerEvent:Connect(function(player, orbPos)
+    -- Server-side validation (anti-cheat): ensure orb is near the player
+    local character = player.Character
+    if not character then return end
+
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+
+    if typeof(orbPos) ~= "Vector3" then return end
+
+    local distance = (hrp.Position - orbPos).Magnitude
+    if distance > 50 then
+        warn("[ANTI-CHEAT] " .. player.Name .. " attempted orb collection at distance " .. distance)
+        return
+    end
+
     local now = tick()
     if orbCooldowns[player.UserId] and (now - orbCooldowns[player.UserId]) < 0.4 then return end
     orbCooldowns[player.UserId] = now
+
     local data = PlayerData[player.UserId]; if not data then return end
     data.Data = data.Data + CONFIG.ORB_REWARD
     data.TotalEarned = data.TotalEarned + CONFIG.ORB_REWARD
     data.BlocksCollected = (data.BlocksCollected or 0) + 1
     UpdateData(player)
+
     -- Fire back orb position so client can animate disappear
-    if orbPos then
-        OrbCollected:FireClient(player, orbPos, CONFIG.ORB_RESPAWN)
-    end
+    OrbCollected:FireClient(player, orbPos, CONFIG.ORB_RESPAWN)
 end)
 
 PurchasePlot.OnServerEvent:Connect(function(player, plotId)
@@ -307,7 +327,7 @@ PurchasePlot.OnServerEvent:Connect(function(player, plotId)
     if plot.owner then Notify(player, "Plot is owned!", "error"); return end
     local data = PlayerData[player.UserId]; if not data then return end
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if #data.Plots >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error"); return end
+    if safeLen(data.Plots) >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error"); return end
     if data.Data < plot.price then Notify(player, "Need "..plot.price.." Data!", "error"); return end
     data.Data = data.Data - plot.price
     data.TotalSpent = data.TotalSpent + plot.price
@@ -343,7 +363,7 @@ PlaceComputer.OnServerEvent:Connect(function(player, plotId, tier)
     tier = math.clamp(math.floor(tonumber(tier) or 1), 1, #CONFIG.COMPUTER_TIERS)
     local ct = CONFIG.COMPUTER_TIERS[tier]
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if #data.Computers >= ht.maxComputers then Notify(player, "Upgrade house first!", "error"); return end
+    if safeLen(data.Computers) >= ht.maxComputers then Notify(player, "Upgrade house first!", "error"); return end
     if data.Data < ct.cost then Notify(player, "Need "..ct.cost.." Data!", "error"); return end
     data.Data = data.Data - ct.cost; data.TotalSpent = data.TotalSpent + ct.cost
     local comp = {tier=tier, plotId=plotId, name=ct.name, dps=ct.dps}

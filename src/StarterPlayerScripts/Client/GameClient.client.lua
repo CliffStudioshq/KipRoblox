@@ -291,6 +291,12 @@ local function SetData(v)
     task.delay(0.15, function() dataLabel.TextColor3 = C.GREEN end)
 end
 
+local function SetDps(dps)
+    dps = math.max(0, math.floor(tonumber(dps) or 0))
+    dpsLabel.Text = "⚡ "..dps.."/s"
+    statValues.dps.Text = dps.."/s"
+end
+
 -- ============================================================
 -- STEP 1: Wait for leaderstats (with game.Loaded already done)
 -- ============================================================
@@ -438,8 +444,7 @@ task.spawn(function()
         for _, comp in ipairs(data.Computers or {}) do
             dps = dps + (COMP_TIERS[comp.tier] and COMP_TIERS[comp.tier].dps or 0)
         end
-        statValues.dps.Text = dps.."/s"
-        dpsLabel.Text = "⚡ "..dps.."/s"
+        SetDps(dps)
     end
 
     statsBtn.MouseButton1Click:Connect(function()
@@ -448,6 +453,16 @@ task.spawn(function()
         if panel.Visible then RefreshStats() end
     end)
     pclose.MouseButton1Click:Connect(function() panel.Visible = false end)
+
+    -- Keep DPS/stats fresh while Stats panel is open, without spamming.
+    task.spawn(function()
+        while gui and gui.Parent do
+            task.wait(5)
+            if panel.Visible then
+                RefreshStats()
+            end
+        end
+    end)
 
     -- ---- SHOP PANEL ----
     ShopHeader("─── Computers ───")

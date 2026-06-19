@@ -173,6 +173,16 @@ end)
 section("Lighting", function()
     local lt = game:GetService("Lighting")
 
+    -- Prevent stacking duplicate post effects on script hot-reload (common in Studio).
+    for _, child in ipairs(lt:GetChildren()) do
+        if child:IsA("BloomEffect")
+            or child:IsA("ColorCorrectionEffect")
+            or child:IsA("SunRaysEffect")
+            or child:IsA("Atmosphere") then
+            child:Destroy()
+        end
+    end
+
     -- ShadowMap: best balance for tycoon (performance + looks)
     lt.Technology          = Enum.Technology.ShadowMap
     lt.ClockTime           = 17.5      -- golden hour
@@ -214,6 +224,11 @@ section("Lighting", function()
     atm.Parent  = lt
 
     -- Dynamic clouds
+    local existingClouds = terrain:FindFirstChildOfClass("Clouds")
+    if existingClouds then
+        existingClouds:Destroy()
+    end
+
     local clouds = Instance.new("Clouds")
     clouds.Cover   = 0.45   -- not fully overcast, nice puffy look
     clouds.Density = 0.7
