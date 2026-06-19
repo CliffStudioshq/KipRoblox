@@ -10,6 +10,8 @@ local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local DataStoreService   = game:GetService("DataStoreService")
 
+-- Bridge builder lives in WorldBuilder.server.lua (global functions)
+
 local DATASTORE_VERSION = 5
 
 print(("="):rep(50))
@@ -77,6 +79,8 @@ local Notification      = MakeEvent("Notification")
 local DataUpdated       = MakeEvent("DataUpdated")
 local PlotPurchased     = MakeEvent("PlotPurchased")
 local PlotSold          = MakeEvent("PlotSold")
+local BridgeBuilt       = MakeEvent("BridgeBuilt")
+local BridgeRemoved     = MakeEvent("BridgeRemoved")
 local ComputerPlaced    = MakeEvent("ComputerPlaced")
 local HouseUpgraded     = MakeEvent("HouseUpgraded")
 local OrbCollected      = MakeEvent("OrbCollected")   -- fires orb position back so client can animate
@@ -428,6 +432,12 @@ PurchasePlot.OnServerEvent:Connect(function(player, plotId)
     table.insert(data.Plots, plotId)
     UpdateData(player)
     PlotPurchased:FireAllClients(plotId, player.UserId, player.Name)
+    if typeof(BuildBridge) == "function" then
+        BuildBridge(plotId, player.Name, player.UserId)
+    else
+        warn("[BRIDGE] BuildBridge function missing (WorldBuilder not loaded?)")
+    end
+    BridgeBuilt:FireAllClients(plotId, player.Name, player.UserId)
     Notify(player, "Plot "..plotId.." purchased!", "success")
     print("[GAME] "..player.Name.." bought "..plotId)
 end)
@@ -437,6 +447,14 @@ SellPlot.OnServerEvent:Connect(function(player, plotId)
     local plot = Plots[plotId]
     if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error"); return end
     local data = PlayerData[player.UserId]; if not data then return end
+
+    if typeof(RemoveBridge) == "function" then
+        RemoveBridge(plotId)
+    else
+        warn("[BRIDGE] RemoveBridge function missing (WorldBuilder not loaded?)")
+    end
+    BridgeRemoved:FireAllClients(plotId)
+
     local sp = math.floor(plot.price * 0.5)
     data.Data = data.Data + sp; data.TotalEarned = data.TotalEarned + sp
     plot.owner = nil; plot.ownerName = nil

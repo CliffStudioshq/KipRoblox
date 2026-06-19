@@ -358,6 +358,8 @@ task.spawn(function()
     local houseUpgEv   = Ev("HouseUpgraded")
     local dataUpdEv    = Ev("DataUpdated")
     local getDataFn    = Ev("GetPlayerData")
+    local bridgeBuiltEv = Ev("BridgeBuilt")
+    local bridgeRemEv   = Ev("BridgeRemoved")
 
     -- Backup data sync from server
     if dataUpdEv then
@@ -410,6 +412,18 @@ task.spawn(function()
             if uid ~= player.UserId then
                 Notify(uname.." bought a plot!", Color3.fromRGB(255,210,80))
             end
+        end)
+    end
+
+    if bridgeBuiltEv then
+        bridgeBuiltEv.OnClientEvent:Connect(function(pid, ownerName, ownerUserId)
+            Notify("🌉 Bridge built to "..tostring(pid).." by "..tostring(ownerName).."!", C.CYAN)
+        end)
+    end
+
+    if bridgeRemEv then
+        bridgeRemEv.OnClientEvent:Connect(function(pid)
+            Notify("🌉 Bridge removed from "..tostring(pid), C.DIM)
         end)
     end
 
