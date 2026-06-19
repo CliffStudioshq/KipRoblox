@@ -1,321 +1,363 @@
-# Roblox DataStore Best Practices (2025/2026)
+# DataTycoon — Roblox DataStore Best Practices (2025/2026)
 
-This document summarizes current (2025/2026) Roblox DataStore guidance and applies it to **DataTycoon**’s current implementation.
+This document summarizes modern Roblox **DataStore** guidance and applies it specifically to DataTycoon’s current implementation in:
+- `src/ServerScriptService/Systems/Main.server.lua`
 
-**Primary references (Creator Hub):**
-- Data store error codes and limits: https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
-- Implement player data & purchasing systems (includes retry ordering + session locking discussion): https://create.roblox.com/docs/cloud-services/data-stores/player-data-purchasing
-- Versioning, listing, and caching: https://create.roblox.com/docs/en-us/cloud-services/data-stores/versioning-listing-and-caching.md
-- DataStoreService class reference (request budgets, rate limit formula, etc.): https://create.roblox.com/docs/en-us/reference/engine/classes/DataStoreService.md
+Primary references:
+- Roblox Creator Hub: **Data store error codes and limits** (limits, throttling, queue sizes, storage): https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
+- Roblox Engine API: **DataStoreService** (budgets, APIs): https://create.roblox.com/docs/reference/engine/classes/DataStoreService
+- Roblox Creator Docs (GitHub mirror): **Best practices for data stores**: https://github.com/Roblox/creator-docs/blob/main/content/en-us/cloud-services/data-stores/best-practices.md
+- Roblox DevForum (announcement): **DataStores Access and Storage Updates** (early 2026 changes): https://devforum.roblox.com/t/datastores-access-and-storage-updates/3597255
+- Roblox Staff DevForum: **Implementing Player Data and Purchasing Systems** (retries + ordering + session locking): https://devforum.roblox.com/t/implementing-player-data-and-purchasing-systems/2839941
 
 ---
 
-## 1) Current DataStore limits and quotas
+## 1) Current DataStore limits and quotas (2025/2026)
 
-Roblox DataStores have **multiple, overlapping constraints**:
-
-### A. Request budgets (throttling)
-- DataStore calls are subject to **request budgets** by request type. Exceeding budgets leads to throttling.
-- Roblox exposes budgets via:
-  - `DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.<...>)`
-- **Important nuance:** `UpdateAsync()` consumes from **both** the **read** and **write** budgets (Creator Hub explicitly notes this).
-
-**Best practice:**
-- Avoid “high frequency” datastore reads/writes in normal gameplay. Keep state **in-memory** on the server and persist at key points (join, periodic autosave, leave, purchases).
-
-### B. Per-request queue size
-Creator Hub specifies:
-- **Each queue has a limit of 30 requests**.
-- If the queue is full, requests can be **dropped** with error codes in the **301–306** range.
-
-What this means operationally:
-- Even if your average rate is OK, **bursts** (e.g., server start with many `GetAsync`, autosave tick for all players, mass shutdown) can overflow the queue.
-
-### C. Key name constraints
-Creator Hub error codes document:
-- Key name must not be empty (`KeyNameEmpty`).
-- Key name length must be **≤ 50 characters** (`KeyNameLimit`).
-
-### D. Value size constraints
-Creator Hub notes that when using `SetAsync()` or `UpdateAsync()`:
-- The **serialized value** can’t exceed the platform limit (the docs label this as “size X” and surface it via error `ValueTooLarge`).
-- In practice, Roblox developers widely treat this as **~4 MB per key** (historically raised from 256 KB to 4 MB in 2020; still commonly cited and consistent with “ValueTooLarge” behavior).
-
-**Best practice:**
-- Keep player state compact; prefer IDs and small structs.
-- Avoid storing large derived/duplicated data; recompute on load when possible.
-- If approaching size limits, use **sharding** (split into multiple keys) or **compression/serialization**, but understand that sharding increases request count.
-
-### E. Throughput rounding
-Creator Hub notes:
-- For throughput accounting, Roblox rounds each request up to the **next kilobyte**.
+### 1.1 Per-object size limit (value size)
+- Roblox’s current documented best-practice guidance references a **4 MB object size limit** per key/value object.  
+  Source: Creator Docs best-practices page (object size limit).  
+  https://github.com/Roblox/creator-docs/blob/main/content/en-us/cloud-services/data-stores/best-practices.md
 
 Practical implication:
-- Many tiny writes still add up quickly; avoid frequent writes of small deltas.
+- Your `Player_<UserId>` payload must remain safely below this limit after serialization.
+- Large arrays (plots/computers/inventories/logs) are the typical drivers of value bloat.
 
-### F. Versioning and retention (useful for rollback/migration)
-From the **versioning** doc:
-- `SetAsync`, `UpdateAsync`, `IncrementAsync` create versioned backups using the **first write to each key in each UTC hour**.
-- Subsequent writes in the same UTC hour overwrite the previous state.
-- Versioned backups expire **30 days after a new write overwrites them**.
-- The **latest version never expires**.
+### 1.2 Request throttling, queues, and “dropped requests”
+Roblox queues requests server-side and throttles when you exceed budget.
 
-**Best practice:**
-- Treat DataStore versioning as a “safety net,” not a primary backup strategy.
-- Before rolling out risky migrations, consider an **experience snapshot** (Open Cloud “Snapshot Data Stores” flow mentioned in docs).
+Key mechanics:
+- **Each request queue has a limit of 30 requests.** If the queue fills, additional requests are **dropped** with error codes **301–306** (Get/Set/Increment/Update/GetSorted/Remove throttle).  
+  Source: error codes and limits.  
+  https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
+
+Implications:
+- Bursty patterns (many simultaneous `GetAsync` on join spikes, or autosave for many players at once) can overflow queues.
+- When you see error codes 301–306, you’re not “slow” — requests were **discarded**, so retries must be done carefully.
+
+### 1.3 Throughput measurement (KB rounding)
+- Roblox counts throughput per request rounded **up to the next kilobyte**.  
+  Source: error codes and limits.  
+  https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
+
+Implication:
+- Many tiny writes are inefficient; prefer fewer, larger, well-structured writes.
+
+### 1.4 Storage quota (latest version storage)
+Roblox documents a storage limit formula:
+- **Total latest version storage limit = `100 MB + 1 MB * lifetime user count`**  
+  Source: error codes and limits.  
+  https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
+
+Operational implications:
+- Storing lots of per-user keys or “event history” keys can scale storage quickly.
+- Monitor via Creator Hub **Data Stores Manager** / dashboards, and delete test/event keys when done.
+
+### 1.5 Access limits moving to “per-experience” (early 2026)
+Roblox announced a major change:
+- DataStore access limits move from **per-server** to **per-experience (per-universe)**, with **substantially increased limits** planned for **early 2026**.  
+  Source: DevForum announcement.  
+  https://devforum.roblox.com/t/datastores-access-and-storage-updates/3597255
+
+The announcement includes an (upcoming) table for **requests per minute per universe** for standard DataStores, using formulas based on **CCU** (concurrent users), e.g.:
+- **Get:** `250 + CCU * 40` requests/min/universe
+- **Set:** `250 + CCU * 20` requests/min/universe
+- **List:** `10 + CCU * 2` requests/min/universe
+- **Remove:** `100 + CCU * 40` requests/min/universe
+
+Notes:
+- These are the **new model** described for early 2026; in-flight or staged rollout can mean your live experience may still be under older enforcement until Roblox flips it.
+
+### 1.6 Request budgets at runtime
+Roblox provides runtime introspection:
+- `DataStoreService:GetRequestBudgetForRequestType(Enum.DataStoreRequestType.XXX)` returns current budget.  
+  Source: DataStoreService docs.  
+  https://create.roblox.com/docs/reference/engine/classes/DataStoreService
+
+Best practice:
+- Use budgets to smooth bursts (especially autosaves) rather than letting bursts hit the 30-queue drop limit.
 
 ---
 
 ## 2) Retry strategies for failed requests
 
-### A. Always wrap calls in `pcall()`
-Creator Hub recommends using `pcall()` to handle connectivity/platform failures.
+### 2.1 Always wrap DataStore calls
+- Wrap all calls in `pcall()`; errors can be connectivity, throttling, shutdown, payload size, etc.  
+  Source: error codes and limits.  
+  https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
 
-### B. Use exponential backoff + jitter
-A good general retry pattern for transient failures:
-- Exponential backoff: `baseDelay * (2 ^ attempt)` or similar
-- Add **jitter** (randomness) to avoid thundering herds across servers
-- Cap the delay and total attempts
+### 2.2 Treat some failures as “unknown outcome”
+Roblox explicitly warns:
+- A failed write call (ex: `UpdateAsync`) means the server didn’t receive a success response, **but the backend write might still have occurred**. In some scenarios, the final state is unknown until verified by follow-up read (without cache).  
+  Source: error codes and limits.  
+  https://create.roblox.com/docs/cloud-services/data-stores/error-codes-and-limits
 
-Example policy (typical):
-- Attempts: 5–8
-- Backoff: 0.5s, 1s, 2s, 4s, 8s (capped)
-- Jitter: ±20–50%
+Practical implications:
+- Naively retrying the exact same write can cause duplication or regression if the first attempt actually succeeded.
+- Prefer **idempotent** updates or “merge” updates where safe.
 
-### C. Avoid “naive retries” that reorder writes
-Roblox’s **player-data-purchasing** doc calls out a key pitfall:
-- If you retry failed writes independently, you can accidentally apply operations **out of order** (e.g., an earlier failed write retries later and overwrites a newer value).
+### 2.3 Prefer exponential backoff + jitter
+Typical modern pattern:
+- Retry on transient failures with **exponential backoff** (e.g., 1s, 2s, 4s, 8s…) plus **random jitter** to avoid herd effects.
+- Cap maximum delay and attempts.
 
-Roblox recommends a per-key ordering approach:
-- Queue operations **per key**
-- Ensure that operations (and their retries) complete **in order**
-- Yield the caller until the queued operation completes
+Your retry should be **selective**:
+- Retry transient failures (throttling 301–306, internal errors, temporary outages)
+- Don’t retry permanent input failures (key name empty/too long, value too large, serialization errors)
 
-This matters even with `UpdateAsync`:
-- `UpdateAsync` reads latest value, but **the sequence of transformations must still be consistent** to avoid invalid intermediate states (e.g., subtracting currency before adding currency).
+### 2.4 Preserve ordering per key (critical)
+Roblox Staff calls out a common bug:
+- Naive retries can execute out of order and overwrite newer state with older state.
 
-### D. Treat some failures as “unknown write state”
-Creator Hub warns:
-- A failed write response does **not always guarantee** the write didn’t occur.
-- In some scenarios the final write state is **unknown** until verified by a follow-up read.
+Example from the Staff post:
+- Request A sets K = 1, fails, retry scheduled.
+- Request B sets K = 2.
+- Retry of A later writes K back to 1.
 
-**Best practice:**
-- For critical writes (purchases, irreversible progression), record an **idempotency token** (e.g., purchase receipt ID / transaction ID) in the stored data so replays don’t double-award.
-- If a write fails after retries, consider reading back (possibly with cache-bypass techniques if available) to confirm state.
+Source (retries/order discussion):
+- https://devforum.roblox.com/t/implementing-player-data-and-purchasing-systems/2839941
 
-### E. Respect budgets to prevent self-inflicted throttling
-- Use `GetRequestBudgetForRequestType` to avoid bursts.
-- If budget is low, delay non-critical saves rather than spamming retries into a full queue.
+Best practice:
+- Serialize requests **per key** (a per-key queue) so that retries for a key cannot overtake later writes.
+
+### 2.5 Use `UpdateAsync` transforms for “merge” semantics
+- `UpdateAsync(key, transformFn)` provides server-side atomic transforms for that key.
+
+Caveat:
+- `UpdateAsync` is not a magic bullet if your logic “returns an old snapshot”; you still need ordering and correctness.
+
+Best practice:
+- In your transform, merge *only the deltas you intend*, and consider embedding:
+  - `_dataVersion`
+  - `lastWriteUnix`
+  - `sessionId`
+  - `writeCounter` (monotonic per session)
+
+### 2.6 Budget-aware throttling
+- Before large bursts (e.g., autosave loop), read budgets via `GetRequestBudgetForRequestType` and either:
+  - spread saves over time, or
+  - skip a cycle for some players and save them next tick.
+
+This reduces queue fill and dropped requests.
 
 ---
 
 ## 3) Data migration patterns
 
-Data migrations are inevitable as your saved schema evolves.
+Data migrations are inevitable when you add new mechanics, rename fields, or change schemas.
 
-### A. Version your data explicitly
-- Store a version field in each saved record:
-  - e.g. `_dataVersion = 5`
-- On load, detect old versions and migrate forward.
+### 3.1 Store an explicit data version
+Best practice:
+- Include `_dataVersion` in each saved object.
+- Migrate on load from old versions to current.
 
-### B. Prefer “forward-only, incremental” migrations
-- Apply migrations in steps: v1→v2→v3...
-- Keep migrations **deterministic** and **idempotent**.
+DataTycoon already does this:
+- `DATASTORE_VERSION = 5`
+- loads saved data, checks `saved._dataVersion or saved.DataVersion`, then performs stepwise migrations.
 
-### C. Merge defaults after migrations
-- After applying migrations, ensure any new fields exist by merging in a default template.
+### 3.2 Stepwise migration blocks (vN → vN+1)
+Recommended pattern:
+- Migrate in ordered steps (1→2, 2→3, …), and update the stored version once complete.
+- Keep migrations **pure** (no yielding, no DataStore calls inside the migration itself).
 
-### D. Migrate on read (lazy migration)
-Common pattern:
-1. Load saved data.
-2. If version < current:
-   - Transform in memory.
-   - Mark version updated.
-3. Save back at the next safe save point.
+### 3.3 Reconciliation / default merging
+After migrations:
+- Merge in new default fields so old saves don’t break code.
 
-Pros:
-- No expensive “migrate everyone” job.
-- Only active players are migrated.
+DataTycoon does a default merge:
+- Loops `DEFAULT_DATA` and sets missing keys to default values.
 
-Cons:
-- Old schema lives longer for inactive players.
+### 3.4 Key versioning vs object versioning
+Roblox’s docs emphasize:
+- Data stores version **individual objects**, not the entire store; storing a “single object per player” works well with rollbacks/versions.  
+  Source: best practices.  
+  https://github.com/Roblox/creator-docs/blob/main/content/en-us/cloud-services/data-stores/best-practices.md
 
-### E. Migration safety with backups/snapshots
-- Use DataStore **versioning** as rollback support.
-- For major changes, take an **experience snapshot** prior to release when possible.
+Practical guidance:
+- Keep a **single key per player** for most player-state.
+- Avoid creating new keys for every schema version; that inflates key counts and storage.
 
-### F. Sharding strategy for future growth
-If player data risks exceeding per-key size limits, plan sharding early:
-- `Player_<id>:core` (currency, tier, timestamps)
-- `Player_<id>:inventory` (items)
-- `Player_<id>:plots` (owned plots)
-
-Sharding reduces “one giant blob” risk but increases request volume—budget accordingly.
+### 3.5 Migration safety checks
+Recommended:
+- Validate types after migration (tables vs numbers), clamp ranges, and sanitize user-controlled fields.
+- Consider storing `schemaHash` or `lastMigratedAt` for debugging.
 
 ---
 
 ## 4) Session locking recommendations
 
-### Why session locking matters
-Roblox explicitly calls out session locking as a core concern:
-- If a player’s data is loaded on multiple servers concurrently, you can get:
-  - stale overwrites
-  - duplication exploits
-  - progress loss
+### 4.1 Why session locking matters
+Even without “trading,” session locking prevents:
+- **data regression** (new session loads old data while prior session save is still in flight)
+- duplication exploits (rejoin quickly to reload prior state)
+- cross-server overwrites during teleports or fast reconnects
 
-This can happen due to:
-- Player reconnecting quickly
-- Teleports
-- Roblox server migration edge cases
-- Slow shutdown saving
+Roblox Staff explicitly lists session locking as a core problem player data systems should solve.  
+Source: https://devforum.roblox.com/t/implementing-player-data-and-purchasing-systems/2839941
 
-### Common locking approaches
+### 4.2 Lock record fields (common pattern)
+In the player’s DataStore object (same key), store:
+- `activeSession = {
+    serverJobId = game.JobId,
+    sessionId = <random GUID>,
+    lockTime = os.time(),
+    lastHeartbeat = os.time(),
+  }`
 
-#### Option 1: MemoryStore-based lock (recommended when available)
-Use `MemoryStoreService` as a cross-server ephemeral lock:
-- Key: `lock:Player_<UserId>`
-- Value: `{serverId, timestamp}`
-- TTL: 60–180 seconds
-- Acquire on join; renew periodically.
-- Release on clean leave.
+Then:
+- On load, attempt to acquire lock via `UpdateAsync`:
+  - If no lock, take it.
+  - If lock exists but stale (heartbeat older than threshold), steal lock.
+  - If lock exists and fresh, reject loading and ask player to rejoin.
 
-If lock acquisition fails:
-- Wait and retry for a short window (e.g., up to 10–20 seconds), then decide:
-  - allow with read-only mode, or
-  - kick with a friendly “Data still loading, rejoin in a moment” message.
+### 4.3 Heartbeats and stale lock timeouts
+Because servers can crash, locks must expire:
+- Update `lastHeartbeat` periodically (e.g., every 30–60 seconds).
+- Consider lock stale if heartbeat is older than (e.g.) 120–180 seconds.
 
-#### Option 2: DataStore lock field (fallback)
-Store a lock field inside the player record:
-- `{ lock = { jobId, time } }`
-- On load, if lock is recent and jobId differs, treat as locked.
+Budget note:
+- Heartbeats cost writes; do not heartbeat too often.
 
-Downsides:
-- Consumes DataStore ops to manage lock.
-- Susceptible to stale locks if save fails.
+### 4.4 Release lock on normal exit
+On `PlayerRemoving` and `BindToClose`, attempt to:
+- Save the data
+- Clear or mark the lock as released (best-effort)
 
-### Additional best practices
-- On load, if you detect lock held elsewhere, **do not proceed** to modify and save the same key.
-- Use TTLs and renewal so crashes don’t lock forever.
+### 4.5 Use a proven library when possible
+If you don’t want to implement session locking and ordered retries yourself, use a well-known wrapper library that provides:
+- session locking
+- auto-save scheduling
+- reconciliation
+- ordered write queue
+
+(Examples in the community include ProfileService / ProfileStore; evaluate suitability for your codebase and constraints.)
 
 ---
 
-## 5) Specific recommendations for DataTycoon’s current implementation
+## 5) Recommendations for DataTycoon’s current implementation
 
-### Current implementation summary (from `Main.server.lua`)
-DataTycoon currently:
-- Uses `DataStoreService:GetDataStore("DataTycoon_v" .. DATASTORE_VERSION)`.
-- Loads with `GetAsync` wrapped in `pcall` with **3 attempts** and exponential-ish wait (`1.5 ^ attempt`).
-- Saves with `UpdateAsync(key, function() return value end)` (effectively a Set) wrapped in `pcall`, **no retries**.
-- Keeps player state in-memory (`PlayerData[userId]`).
-- Autosaves every **60s** for all players.
-- Saves on `PlayerRemoving` and `BindToClose`.
-- Includes a data migration block (v1→v5) and merges defaults.
+This section is based on `Main.server.lua` as of **DataTycoon v0.22**.
 
-This is already aligned with several platform best practices (in-memory session state, load-time migrations).
+### 5.1 What DataTycoon currently does well
+- Uses **in-memory** `PlayerData` table and only hits DataStore on:
+  - join (load)
+  - leave (save)
+  - autosave (every 60s)
+  - server close (`BindToClose`)
+- Uses `UpdateAsync` for saves (`dsSet`)
+- Has basic `pcall` wrappers
+- Implements **schema versioning + stepwise migration**
+- Merges defaults to ensure forward compatibility
 
-### Recommendations (actionable)
+### 5.2 Gaps / risks to address
 
-#### 5.1 Add ordered, per-player save queue (prevents out-of-order retries)
-Problem:
-- The current `dsSet()` does not retry and does not enforce ordering across concurrent save triggers:
-  - autosave tick
-  - PlayerRemoving
-  - BindToClose
-  - potential future purchase saves
+#### A) `dsSet` has no retry/backoff
+Current:
+- `dsSet` calls `UpdateAsync` once; if it fails, it logs and returns `false`.
 
-If you add retries later without ordering, you risk **older saves overwriting newer saves**.
+Why it matters:
+- transient failures are common (throttle/queues/shutdown). A single failure at `PlayerRemoving` can lose a whole session.
 
 Recommendation:
-- Implement a per-player key queue (like Roblox’s documented approach) so only one write per player runs at a time, and retries happen inside that queued op.
+- Implement retry with exponential backoff + jitter for writes.
+- Preserve ordering per key (see below).
 
-Minimal design:
-- `SaveQueue[userId] = Promise/Coroutine chain`
-- Enqueue saves; if a newer save is queued, collapse intermediate saves (“keep last”) for autosave.
-
-#### 5.2 Add retries to saves, with jitter and budget-awareness
-Problem:
-- Writes can fail transiently; current save path logs once and returns.
+#### B) `dsGet` retries but backoff math is a bit odd
+Current:
+- `task.wait(1.5 ^ attempt)` which yields 1.5s, 2.25s, 3.375s.
 
 Recommendation:
-- Retry `UpdateAsync` 5–8 times with exponential backoff + jitter.
-- Before retrying, check write budget; if near 0, delay instead of spamming.
+- Use standard exponential backoff with jitter, e.g. `base * 2^(attempt-1) + random()`.
+- Consider a slightly larger cap for production (e.g. up to 10–15 seconds), especially during outages.
 
-Also note:
-- Since `UpdateAsync` consumes both read/write budgets, heavy autosave can be more expensive than expected.
-
-#### 5.3 Prefer `UpdateAsync` transformation semantics (merge) where it matters
-Current code uses `UpdateAsync(function() return value end)` which overwrites.
-
-Recommendation:
-- When feasible, use `UpdateAsync` to merge server state into the latest stored state:
-  - `return deepMerge(old or default, value)`
-
-This protects against rare cases where:
-- session locking fails (two servers), or
-- last save is stale.
-
-(Still: proper session locking is the real fix.)
-
-#### 5.4 Introduce session locking before PvP/raids and purchases
-DataTycoon’s roadmap mentions PvP raiding and monetization-like mechanics. These increase the cost of data loss/exploits.
-
-Recommendation:
-- Add MemoryStore-based session locks per user.
-- On join, acquire lock; on leave, release.
-- If lock can’t be acquired quickly, prevent play to avoid dupe/stale-write exploits.
-
-#### 5.5 Reduce autosave burstiness
-Current autosave loops over all players every 60 seconds and spawns a task per player.
+#### C) No request ordering / per-key queue
+Current:
+- Autosave loop spawns `SavePlayerData` for each player concurrently (`task.spawn(SavePlayerData, p)`), and `PlayerRemoving` also spawns a save.
 
 Risk:
-- Large servers can create synchronized bursts that hit queue limits (30) and budgets.
-
-Recommendations:
-- Add per-player randomized offset (jitter) so saves are staggered.
-- Save only if dirty (data changed) since last save.
-- Consider saving less frequently for stable players (e.g., 90–180s) while still saving on critical events.
-
-#### 5.6 Track “dirty” state and last successful save time
-Recommendation:
-- Mark PlayerData dirty on any change (currency, plots, computers, house).
-- Autosave only dirty players.
-- Record `lastSaveAttempt` and `lastSaveSuccess` for diagnostics and throttling.
-
-#### 5.7 Harden against “default data overwrite” failure mode
-Roblox warns: fallback-to-default must not overwrite real data later.
-
-Current risk scenario:
-- `dsGet` fails and returns nil → game treats as new player and begins play.
-- Later, a save succeeds and overwrites the real existing record with defaults + new progress.
+- Multiple saves for the same key can overlap and arrive out of order.
+- Roblox Staff explicitly warns naive retries can apply out-of-order.
 
 Recommendation:
-- If load fails due to DataStore outage, consider:
-  - temporary kick with message “Data failed to load; please rejoin” (safest), or
-  - allow play in a “no-save” session mode that never writes, and clearly inform player.
+- Add a **per-player (per-key) save queue**:
+  - Only one in-flight DataStore operation per player key.
+  - Coalesce multiple save requests into “save latest state” when appropriate.
 
-#### 5.8 Add a lightweight schema checksum / validation
-Recommendation:
-- Validate loaded data types (numbers/tables) before trusting it.
-- If corrupt, restore from defaults and/or roll back to a prior version (manual tooling).
+#### D) No session locking
+Current:
+- Loads `Player_<UserId>` and then writes back on timers/exit.
 
-#### 5.9 Plan for future key organization
-Roblox warns that legacy **scopes** are discouraged for new experiences; prefer prefixes/listing.
-
-Current code uses a single store name per version and keys like `Player_<id>`.
+Risk:
+- If the player rejoins quickly or teleports and old server saves late, the old server can overwrite newer state.
 
 Recommendation:
-- Keep key prefixes consistent (`player:<userId>` style is also common).
-- If you later add global state, don’t mix it with player keys without clear prefixes.
+- Implement session locking (fields inside the saved object + `UpdateAsync` acquisition).
+- If lock cannot be acquired, inform the player (“Data still saving from another server; please rejoin”).
+
+#### E) “Whole-object overwrite” behavior in `dsSet`
+Current:
+- `UpdateAsync(key, function() return value end)` returns the entire in-memory `data` table.
+
+Risk:
+- If multiple systems ever write to the same key (or you later add cross-server write patterns), returning the full snapshot can overwrite changes.
+
+Recommendation:
+- Continue saving a single object, but prefer update transforms that merge and/or validate:
+  - Ensure `_dataVersion` always set
+  - Ensure lock/session fields are correct
+  - Optionally keep a `lastWrite` time and `writeCounter`
+
+#### F) BindToClose save does not yield for completion
+Current:
+- `BindToClose` loops `SavePlayerData(p)` directly (not spawned) which is good, but `SavePlayerData` itself doesn’t retry.
+
+Recommendation:
+- Ensure `BindToClose` uses a bounded “save with retries” and yields until either success or timeout, to maximize last-chance persistence.
+
+### 5.3 Concrete improvements checklist for DataTycoon
+
+1) **Implement a DataStore wrapper module** (recommended) that provides:
+   - per-key request queue
+   - retries with exponential backoff + jitter
+   - budget-aware scheduling
+   - optional “verify after ambiguous write failure” for critical transactions
+
+2) **Add session locking** to the player object:
+   - acquire lock on load via `UpdateAsync`
+   - heartbeat at a low rate
+   - release on exit (best effort)
+
+3) **Autosave smoothing**:
+   - rather than saving all players in one 60s burst, stagger across the minute
+   - skip saves when budget is low
+
+4) **Instrument failures**:
+   - log error codes and categorize (throttle vs validation)
+   - track save success rate in analytics/logging to catch issues early
+
+5) **Keep payload small**:
+   - avoid storing derived values (like `dps`) if it can be recomputed
+   - avoid unbounded logs/history arrays in the player object
 
 ---
 
-## Quick checklist (for DataTycoon)
+## Appendix: Mapping common failure modes to actions
 
-- [ ] Add session locking (MemoryStore TTL lock) per user
-- [ ] Implement ordered per-key save queue; retries happen inside queue
-- [ ] Add save retries with exponential backoff + jitter
-- [ ] Stagger autosaves and save only dirty players
-- [ ] Avoid overwriting real data when load fails (kick or no-save mode)
-- [ ] Keep migrations forward-only, deterministic; merge defaults
-- [ ] Monitor throttling error codes (301–306) and experience-level throttles
+- **301–306 throttle / queue full:** backoff + retry; reduce burstiness; check budgets.
+- **105 ValueTooLarge:** reduce saved payload size (prune arrays, compress, store less).
+- **401/402 shutdown access:** expect in shutdown; rely on earlier autosaves; keep close handler efficient.
+- **103/104 serialization errors:** validate data types before saving; avoid Instances, userdata, functions.
 
+---
+
+## DataTycoon quick notes (schema)
+Current saved keys include:
+- `Data`, `TotalEarned`, `TotalSpent`
+- `Plots` (array of plotIds)
+- `Computers` (array of {tier, plotId, name, dps})
+- `HouseTier`, `DailyStreak`, `LastDailyReward`
+- `BlocksCollected`, `LastSeen`
+- `_dataVersion`
+
+Consider pruning derived fields:
+- `Computers[*].name` and `Computers[*].dps` can be recomputed from `tier` (saves space and prevents mismatch if CONFIG changes).
