@@ -26,6 +26,32 @@ Conventions:
 - **Fixed** DataStore initialization so failures won’t prevent Events creation:
   - DataStore creation wrapped in `pcall` with clear warnings about enabling API Services.
 
+#### Anti-cheat & exploit prevention
+- **Added** server-side **orb collection validation** (anti-cheat):
+  - Requires a valid `Vector3` position from the client.
+  - Verifies the claimed position is within **~5 studs** of a real orb in `workspace.DataOrbs`.
+  - Verifies the player’s `HumanoidRootPart` is within **50 studs** of the claim.
+  - Kicks on invalid claims; kicks if the `DataOrbs` folder is missing (validation cannot run).
+- **Added** basic **server-side orb spam throttling** (per-player cooldown ~0.4s) to reduce RemoteEvent spam.
+- **Changed** orb collection handling to require a valid player character + `HumanoidRootPart` (early-return if missing).
+
+#### Data persistence
+- **Added** DataStore **versioning + schema migration** (`DATASTORE_VERSION = 5`):
+  - Migrates `Cash → Data` (v1→v2).
+  - Ensures `Plots` table exists when older saves used `PlotCount` (v2→v3).
+  - Migrates `LastLogin → LastSeen` (v3→v4).
+  - Ensures new default fields are merged into older saves (v4→v5).
+  - Writes `_dataVersion` back on save.
+- **Changed** DataStore key to be versioned (`DataTycoon_v<version>`) to safely separate schemas.
+- **Fixed** DataStore reads to retry up to **3 attempts** with exponential-ish backoff and warnings.
+
+#### Offline income
+- **Added** offline income exploit prevention:
+  - Requires at least **60s** offline time before any bonus is awarded.
+  - Adds a **5 minute** per-user cooldown between offline bonus awards (server-session cooldown).
+  - Caps offline bonus time to **2 hours**.
+  - Delays the “Welcome back” notification so the client has time to initialize.
+
 #### Orb collection feedback (client/server)
 - **Added** `OrbCollected` RemoteEvent (server → client) so the client can animate the specific orb that was collected.
 - **Changed** orb collection flow:
