@@ -1,5 +1,5 @@
 --[[
-    WorldBuilder.server.lua — DataTycoon v0.21
+    WorldBuilder.server.lua — DataTycoon v0.22
     Golden hour lighting, terrain grass floor, mountain backdrop,
     Clouds, ShadowMap technology, toned bloom.
     Research applied:
@@ -9,9 +9,15 @@
       - Terrain FillBlock for grass ground (replaces flat Part)
       - FillBall/FillCylinder for mountain ring
       - Terrain.Decoration + GrassLength for animated grass
+
+    Changelog v0.21 → v0.22:
+      - Synced version with Main.server.lua (v0.22)
+      - No functional world-building changes in this release
+      - Version bump only; gameplay changes (anti-cheat, DataStore
+        versioning, offline income cooldown) are in Main.server.lua
 ]]
 
-print("[WORLD] WorldBuilder v0.21 starting...")
+print("[WORLD] WorldBuilder v0.22 starting...")
 
 local PI = math.pi
 local R  = math.random
