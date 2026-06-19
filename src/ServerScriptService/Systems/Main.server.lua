@@ -10,6 +10,8 @@ local Players            = game:GetService("Players")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local DataStoreService   = game:GetService("DataStoreService")
 
+local DATASTORE_VERSION = 5
+
 print(("="):rep(50))
 print("DataTycoon v0.22 — Server starting...")
 print(("="):rep(50))
@@ -42,7 +44,7 @@ end
 -- ============================================================
 local DataStore = nil
 local dsOk, dsErr = pcall(function()
-    DataStore = DataStoreService:GetDataStore("DataTycoon_v4")
+    DataStore = DataStoreService:GetDataStore("DataTycoon_v" .. DATASTORE_VERSION)
 end)
 if not dsOk then
     warn("[DATA] DataStore unavailable: " .. tostring(dsErr))
@@ -115,6 +117,11 @@ local CONFIG = {
 -- PLAYER DATA
 -- ============================================================
 local PlayerData = {}
+
+-- Offline income cooldowns: UserId -> last award timestamp
+local OfflineIncomeCooldowns = {}
+local OFFLINE_INCOME_MIN_TIME = 60      -- minimum seconds offline to qualify
+local OFFLINE_INCOME_COOLDOWN  = 300     -- 5 minutes between awards
 
 local DEFAULT_DATA = {
     Data = CONFIG.STARTING_DATA,
@@ -191,6 +198,51 @@ local function LoadPlayerData(player)
     local data
 
     if saved then
+        -- ========================================================
+        -- DATA MIGRATIONS
+        -- ========================================================
+        local oldVersion = saved._dataVersion or saved.DataVersion
+        if oldVersion == nil then oldVersion = 1 end
+
+        if oldVersion < DATASTORE_VERSION then
+            local v = oldVersion
+
+            -- v1 -> v2: Cash -> Data
+            if v < 2 then
+                if saved.Cash ~= nil and saved.Data == nil then
+                    saved.Data = saved.Cash
+                end
+                saved.Cash = nil
+                v = 2
+            end
+
+            -- v2 -> v3: PlotCount -> ensure Plots table exists
+            if v < 3 then
+                if saved.PlotCount ~= nil then
+                    saved.Plots = saved.Plots or {}
+                end
+                v = 3
+            end
+
+            -- v3 -> v4: LastLogin -> LastSeen
+            if v < 4 then
+                if saved.LastLogin ~= nil and saved.LastSeen == nil then
+                    saved.LastSeen = saved.LastLogin
+                end
+                saved.LastLogin = nil
+                v = 4
+            end
+
+            -- v4 -> v5: defaults ensured by merge below
+            if v < 5 then
+                v = 5
+            end
+
+            saved._dataVersion = DATASTORE_VERSION
+            print("[DATA] Migrated "..player.Name.." from v"..tostring(oldVersion).." to v"..tostring(DATASTORE_VERSION))
+        end
+
+        -- Ensure any new default fields exist
         for k, v in pairs(DEFAULT_DATA) do
             if saved[k] == nil then saved[k] = type(v)=="table" and {} or v end
         end
@@ -205,23 +257,36 @@ local function LoadPlayerData(player)
     local now = os.time()
     if data.LastSeen and data.LastSeen > 0 then
         local elapsed = math.min(now - data.LastSeen, 7200)
-        local offDPS  = CONFIG.PASSIVE_INCOME
-        for _, comp in ipairs(data.Computers or {}) do
-            local ct = CONFIG.COMPUTER_TIERS[comp.tier]
-            if ct then offDPS = offDPS + ct.dps end
-        end
-        local bonus = math.floor(elapsed * offDPS * 0.5)
-        if bonus > 0 then
-            data.Data        = data.Data + bonus
-            data.TotalEarned = data.TotalEarned + bonus
-            -- Notify after client connects (give it 4s to set up)
-            task.delay(4, function()
-                if player.Parent then
-                    Notification:FireClient(player,
-                        "Welcome back! +"..bonus.." Data offline 💤", "success")
+
+        if elapsed < OFFLINE_INCOME_MIN_TIME then
+            print(string.format("[DATA] Offline bonus skipped for %s: only %ds offline (<%ds)", player.Name, elapsed, OFFLINE_INCOME_MIN_TIME))
+        else
+            local lastAward = OfflineIncomeCooldowns[player.UserId]
+            if lastAward and (now - lastAward) < OFFLINE_INCOME_COOLDOWN then
+                print(string.format("[DATA] Offline bonus skipped for %s: cooldown %ds remaining", player.Name, OFFLINE_INCOME_COOLDOWN - (now - lastAward)))
+            else
+                local offDPS  = CONFIG.PASSIVE_INCOME
+                for _, comp in ipairs(data.Computers or {}) do
+                    local ct = CONFIG.COMPUTER_TIERS[comp.tier]
+                    if ct then offDPS = offDPS + ct.dps end
                 end
-            end)
-            print("[DATA] Offline bonus for "..player.Name..": +"..bonus)
+
+                local bonus = math.floor(elapsed * offDPS * 0.5)
+                if bonus > 0 then
+                    data.Data        = data.Data + bonus
+                    data.TotalEarned = data.TotalEarned + bonus
+                    OfflineIncomeCooldowns[player.UserId] = now
+
+                    -- Notify after client connects (give it 4s to set up)
+                    task.delay(4, function()
+                        if player.Parent then
+                            Notification:FireClient(player,
+                                "Welcome back! +"..bonus.." Data offline 💤", "success")
+                        end
+                    end)
+                    print("[DATA] Offline bonus for "..player.Name..": +"..bonus)
+                end
+            end
         end
     end
     data.LastSeen = now
@@ -245,6 +310,7 @@ local function SavePlayerData(player)
     local data = PlayerData[player.UserId]
     if not data then return end
     data.LastSeen = os.time()
+    data._dataVersion = DATASTORE_VERSION
     dsSet("Player_"..player.UserId, data)
 end
 
@@ -291,7 +357,7 @@ end)
 
 local orbCooldowns = {}
 CollectOrb.OnServerEvent:Connect(function(player, orbPos)
-    -- Server-side validation (anti-cheat): ensure orb is near the player
+    -- Server-side validation (anti-cheat): ensure orb is real and near the player
     local character = player.Character
     if not character then return end
 
@@ -300,9 +366,36 @@ CollectOrb.OnServerEvent:Connect(function(player, orbPos)
 
     if typeof(orbPos) ~= "Vector3" then return end
 
+    -- (1) Verify claimed position is near an actual orb in workspace.DataOrbs
+    local dataOrbsFolder = workspace:FindFirstChild("DataOrbs")
+    if not dataOrbsFolder then
+        warn("[ANTI-CHEAT] DataOrbs folder missing; cannot validate orb collection for " .. player.Name)
+        player:Kick("[ANTI-CHEAT] Orb validation unavailable. Please rejoin.")
+        return
+    end
+
+    local nearestOrb
+    local nearestDist = math.huge
+    for _, inst in ipairs(dataOrbsFolder:GetChildren()) do
+        if inst:IsA("BasePart") then
+            local d = (inst.Position - orbPos).Magnitude
+            if d < nearestDist then
+                nearestDist = d
+                nearestOrb = inst
+            end
+        end
+    end
+
+    if (not nearestOrb) or nearestDist > 5 then
+        warn(string.format("[ANTI-CHEAT] %s attempted orb collection at invalid position (nearest orb dist=%.2f)", player.Name, nearestDist))
+        player:Kick("[ANTI-CHEAT] Invalid orb collection detected.")
+        return
+    end
+
     local distance = (hrp.Position - orbPos).Magnitude
     if distance > 50 then
         warn("[ANTI-CHEAT] " .. player.Name .. " attempted orb collection at distance " .. distance)
+        player:Kick("[ANTI-CHEAT] Invalid orb collection detected.")
         return
     end
 
