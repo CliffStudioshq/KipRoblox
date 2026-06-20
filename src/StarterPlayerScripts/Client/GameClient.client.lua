@@ -143,6 +143,11 @@ local shopBtn    = Btn("🛒  Shop",            C.BLUE)
 local buyPlotBtn = Btn("📦  Buy Plot  [E]",  C.GREEN)
 local statsBtn   = Btn("📊  Stats",           Color3.fromRGB(50,50,75))
 
+-- Stats should stay disabled until server confirms data is loaded
+local statsEnabled = false
+statsBtn.Text = "📊  Stats (Loading...)"
+statsBtn.AutoButtonColor = false
+
 -- ---- NOTIFICATION ----
 local notif = Instance.new("TextLabel")
 notif.Size = UDim2.new(0, 380, 0, 36)
@@ -359,8 +364,17 @@ task.spawn(function()
     local houseUpgEv   = Ev("HouseUpgraded")
     local dataUpdEv    = Ev("DataUpdated")
     local getDataFn    = Ev("GetPlayerData")
+    local dataReadyEv  = Ev("PlayerDataReady")
     local bridgeBuiltEv = Ev("BridgeBuilt")
     local bridgeRemEv   = Ev("BridgeRemoved")
+
+    if dataReadyEv then
+        dataReadyEv.OnClientEvent:Connect(function()
+            statsEnabled = true
+            statsBtn.Text = "📊  Stats"
+            statsBtn.AutoButtonColor = true
+        end)
+    end
 
     -- Backup data sync from server
     if dataUpdEv then
@@ -395,13 +409,10 @@ task.spawn(function()
         end)
     end
 
-    -- Buy plot (cycles cheapest first, E key shortcut)
-    local plotOrder = {"plot_0_3","plot_0_-3","plot_3_0","plot_-3_0","plot_3_3","plot_3_-3","plot_-3_3","plot_-3_-3"}
-    local plotIdx = 0
+    -- Buy plot (server picks nearest unowned plot, E key shortcut)
     local function BuyNext()
         if not buyPlotEv then return end
-        plotIdx = (plotIdx % #plotOrder) + 1
-        buyPlotEv:FireServer(plotOrder[plotIdx])
+        buyPlotEv:FireServer()
     end
     buyPlotBtn.MouseButton1Click:Connect(BuyNext)
     UserInputService.InputBegan:Connect(function(inp, gp)
@@ -447,22 +458,46 @@ task.spawn(function()
         if not getDataFn then return end
         local ok, data = pcall(function() return getDataFn:InvokeServer() end)
         if not (ok and data) then return end
-        local hn = HOUSE_NAMES[data.HouseTier] or "Shack"
-        statValues.house.Text  = hn.." (T"..data.HouseTier..")"
-        statValues.plots.Text  = tostring(#(data.Plots or {}))
-        statValues.comps.Text  = tostring(#(data.Computers or {}))
-        statValues.orbs.Text   = tostring(data.BlocksCollected or 0)
-        statValues.data.Text   = fmt(data.Data)
-        statValues.earned.Text = fmt(data.TotalEarned or 0)
-        statValues.spent.Text  = fmt(data.TotalSpent or 0)
+
+        if data.ok == false then
+            statValues.house.Text  = "Loading..."
+            statValues.plots.Text  = "Loading..."
+            statValues.comps.Text  = "Loading..."
+            statValues.orbs.Text   = "Loading..."
+            statValues.data.Text   = "Loading..."
+            statValues.earned.Text = "Loading..."
+            statValues.spent.Text  = "Loading..."
+            task.delay(2, function()
+                if panel.Visible then
+                    RefreshStats()
+                end
+            end)
+            return
+        end
+
+        local snapshot = data.data
+        if type(snapshot) ~= "table" then return end
+
+        local hn = HOUSE_NAMES[snapshot.HouseTier] or "Shack"
+        statValues.house.Text  = hn.." (T"..snapshot.HouseTier..")"
+        statValues.plots.Text  = tostring(#(snapshot.Plots or {}))
+        statValues.comps.Text  = tostring(#(snapshot.Computers or {}))
+        statValues.orbs.Text   = tostring(snapshot.BlocksCollected or 0)
+        statValues.data.Text   = fmt(snapshot.Data)
+        statValues.earned.Text = fmt(snapshot.TotalEarned or 0)
+        statValues.spent.Text  = fmt(snapshot.TotalSpent or 0)
         local dps = 1
-        for _, comp in ipairs(data.Computers or {}) do
+        for _, comp in ipairs(snapshot.Computers or {}) do
             dps = dps + (COMP_TIERS[comp.tier] and COMP_TIERS[comp.tier].dps or 0)
         end
         SetDps(dps)
     end
 
     statsBtn.MouseButton1Click:Connect(function()
+        if not statsEnabled then
+            Notify("Loading...", C.DIM)
+            return
+        end
         shopPanel.Visible = false
         panel.Visible = not panel.Visible
         if panel.Visible then RefreshStats() end
@@ -486,8 +521,9 @@ task.spawn(function()
         ShopItem("💻", ct.name, ct.cost, "+"..ct.dps.."/s passive income", C.BLUE, function()
             if not placeCompEv or not getDataFn then return end
             local ok, data = pcall(function() return getDataFn:InvokeServer() end)
-            if ok and data and data.Plots and #data.Plots > 0 then
-                placeCompEv:FireServer(data.Plots[1], tier)
+            local snapshot = ok and data and data.ok and data.data
+            if snapshot and snapshot.Plots and #snapshot.Plots > 0 then
+                placeCompEv:FireServer(snapshot.Plots[1], tier)
             else
                 Notify("Buy a plot first! [E key]", C.RED)
             end

@@ -86,6 +86,7 @@ local HouseUpgraded     = MakeEvent("HouseUpgraded")
 local OrbCollected      = MakeEvent("OrbCollected")   -- fires orb position back so client can animate
 local OrbStateChanged   = MakeEvent("OrbStateChanged") -- server authoritative orb availability
 local GetPlayerData     = MakeEvent("GetPlayerData", "RemoteFunction")
+local PlayerDataReady   = MakeEvent("PlayerDataReady")
 
 -- NOW parent — entire subtree replicates as one atomic snapshot
 Events.Parent = ReplicatedStorage
@@ -340,6 +341,9 @@ local function LoadPlayerData(player)
 
     ls.Parent = player   -- atomic: client gets complete folder in one replication
     print("[OK] leaderstats created for "..player.Name)
+
+    -- Signal client that GetPlayerData is now safe to call
+    PlayerDataReady:FireClient(player)
 end
 
 local function SavePlayerData(player)
@@ -368,6 +372,25 @@ end
 
 local function Notify(player, msg, t)
     Notification:FireClient(player, msg, t or "info")
+end
+
+local function FindNearestPlot(player)
+    local character = player.Character
+    if not character then return nil end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return nil end
+
+    local nearest, nearestDist = nil, math.huge
+    for _, plot in pairs(Plots) do
+        if not plot.owner then
+            local dist = (hrp.Position - plot.center).Magnitude
+            if dist < nearestDist and dist < 80 then
+                nearest = plot
+                nearestDist = dist
+            end
+        end
+    end
+    return nearest
 end
 
 -- ============================================================
@@ -470,9 +493,21 @@ CollectOrb.OnServerEvent:Connect(function(player, orbId)
 end)
 
 PurchasePlot.OnServerEvent:Connect(function(player, plotId)
-    if type(plotId) ~= "string" then return end
-    local plot = Plots[plotId]
-    if not plot then Notify(player, "Plot not found!", "error"); return end
+    local plot = nil
+    if type(plotId) == "string" then
+        plot = Plots[plotId]
+        if not plot then
+            Notify(player, "Plot not found!", "error")
+            return
+        end
+    else
+        plot = FindNearestPlot(player)
+        if not plot then
+            Notify(player, "Stand near an unowned plot!", "error")
+            return
+        end
+        plotId = plot.id
+    end
     if plot.owner then Notify(player, "Plot is owned!", "error"); return end
     local data = PlayerData[player.UserId]; if not data then return end
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
@@ -553,7 +588,23 @@ UpgradeHouse.OnServerEvent:Connect(function(player)
 end)
 
 GetPlayerData.OnServerInvoke = function(player)
-    return PlayerData[player.UserId]
+    local data = PlayerData[player.UserId]
+    if not data then
+        return {ok = false, reason = "loading"}
+    end
+    return {
+        ok = true,
+        data = {
+            Data = data.Data,
+            TotalEarned = data.TotalEarned,
+            TotalSpent = data.TotalSpent,
+            HouseTier = data.HouseTier,
+            Plots = data.Plots,
+            Computers = data.Computers,
+            DailyStreak = data.DailyStreak,
+            BlocksCollected = data.BlocksCollected,
+        }
+    }
 end
 
 print("[OK] All event handlers connected")
