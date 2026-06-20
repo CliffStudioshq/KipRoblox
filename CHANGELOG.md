@@ -1,6 +1,6 @@
 # DataTycoon — Changelog
 
-This changelog documents notable changes for **DataTycoon** from **v0.1** through **v0.22**.
+This changelog documents notable changes for **DataTycoon** from **v0.1** through **v0.30**.
 
 Conventions:
 - **Added**: new features
@@ -8,7 +8,36 @@ Conventions:
 - **Fixed**: bug fixes
 - **Tuned**: balance/pacing changes
 
-> Note: Versions prior to v0.21 are reconstructed from repository state and feature intent. If you have release notes/commits, we can replace placeholders with exact details.
+---
+
+## v0.30 — 2026-06 (Current)
+
+### Major Redesign: One Plot, Infinite Upgrades
+- **Changed** core gameplay from "buy 8 plots" to "own 1 plot, upgrade it endlessly"
+- **Added** 8 plot building tiers: Empty Plot → Data Outpost → Server Room → Data Center → Tech Campus → Quantum Labs → Neural Nexus → Singularity Core
+- **Added** 8 decoration types per plot: Flower Garden, Fountain, Neon Sign, Hologram Tree, Dragon Statue, Particle Fountain, Mining Drones, Satellite Dish
+- **Added** player upgrade shop at central hub (press F)
+- **Added** 7 player upgrade categories: Data Mining Speed, Orb Magnetism, Orb Value, Idle Mining, Walk Speed, Sprint Power, Jump Boost
+- **Added** 10 fun upgrades: Particle Trail, Music Pack, Titles (Data Miner/Baron/Tycoon), Aura Effect, Fire Trail, Rainbow Mode, Pet: Data Orb, Pet: Robot Dog
+- **Changed** economy: starting Data reduced to 10, base DPS reduced to 0.5/s, Orb reward reduced to 2
+- **Changed** plot assignment: spiral grid system, auto-assigned on first join
+- **Changed** bridges: visual tiers matching plot tier (wood → metal → neon → holographic)
+- **Removed** house tiers, computer placement, multi-plot ownership, plot selling
+- **Added** DataStore migration v5→v6 for new schema
+
+### Balance
+- **Tuned** upgrade costs to create slow early game that snowballs with upgrades
+- **Tuned** building DPS bonuses: 0 → 5 → 15 → 50 → 150 → 400 → 1000 → 3000
+- **Tuned** decoration DPS bonuses: 1 → 3 → 5 → 10 → 25 → 50 → 100 → 200
+- **Tuned** player upgrade costs with per-upgrade scaling multipliers
+
+### Client
+- **Added** v0.30 shop GUI with 3 tabs (Plot / Player / Fun)
+- **Added** Plot Info Frame showing building tier, DPS, decoration slots
+- **Added** fun upgrade visuals: particle trails, auras, fire, titles, pets
+- **Added** orb range ring visualization
+- **Changed** top bar: removed House display, added Plot building display
+- **Added** F key to toggle shop
 
 ---
 

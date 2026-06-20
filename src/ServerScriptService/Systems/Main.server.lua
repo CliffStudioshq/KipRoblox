@@ -1,5 +1,5 @@
 --[[
-    Main.server.lua — DataTycoon v0.23
+    Main.server.lua — DataTycoon v0.30
     Key changes from v0.21:
       - Early static baseplate Part (safety net before terrain loads)
       - OrbCollected RemoteEvent so client can animate orb disappear/respawn
@@ -15,7 +15,7 @@ local DataStoreService   = game:GetService("DataStoreService")
 local DATASTORE_VERSION = 6
 
 print(("="):rep(50))
-print("DataTycoon v0.23 — Server starting...")
+print("DataTycoon v0.30 — Server starting...")
 print(("="):rep(50))
 
 -- ============================================================
@@ -932,5 +932,5 @@ end)
 
 -- (v0.30) No global plot initialization
 print(("="):rep(50))
-print("DataTycoon v0.23 — SERVER READY")
+print("DataTycoon v0.30 — SERVER READY")
 print(("="):rep(50))
