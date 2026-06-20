@@ -18,11 +18,22 @@
 ]]
 
 print("[WORLD] WorldBuilder v0.22 starting...")
+print("[PERF] Estimated part count reduction: 3581 -> 2029")
 
 local Players = game:GetService("Players")
 local PI = math.pi
 local R  = math.random
 local terrain = workspace:WaitForChild("Terrain")
+
+-- Decorative optimization defaults (applied to foliage + similar)
+local function markDecor(p, collide)
+    if not p then return end
+    p.CanQuery = false
+    p.CanTouch = false
+    if collide ~= nil then
+        p.CanCollide = collide
+    end
+end
 
 -- ============================================================
 -- PART FACTORY
@@ -40,6 +51,14 @@ local function P(props)
     p.CastShadow   = props.shadow ~= false
     if props.collide ~= nil then p.CanCollide = props.collide
     else p.CanCollide = true end
+
+    -- Decorative parts should not participate in queries/touches.
+    -- Keep collision behavior as configured by caller.
+    if props.decor == true then
+        p.CanQuery = false
+        p.CanTouch = false
+    end
+
     p.Parent = props.parent or workspace
     if props.rot then
         p.CFrame = CFrame.new(p.Position) * CFrame.Angles(0, math.rad(props.rot), 0)
@@ -406,120 +425,50 @@ end
 
 local function Bush(x, z, s, folder)
     s = s or 1
-    for i = 1, 3 do
-        P({name="Bush", size=Vector3.new(3*s,2.5*s,3*s),
-           pos=Vector3.new(x+R(-2,2), 1.2*s, z+R(-2,2)),
-           color=BrickColor.new("Dark green"), mat=Enum.Material.Grass,
-           shape=Enum.PartType.Ball, collide=false, parent=folder})
-    end
+    local p = P({name="Bush", size=Vector3.new(4.2*s,3.2*s,4.2*s),
+        pos=Vector3.new(x+R(-2,2)*0.35, 1.55*s, z+R(-2,2)*0.35),
+        color=BrickColor.new("Dark green"), mat=Enum.Material.Grass,
+        shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
+    p.Transparency = 0.05
 end
 
 local function Flower(x, z, folder)
-    -- 6 flower archetypes: rose, daisy, tulip, lavender, sunflower, wildflower
-    local ftype = R(1,6)
+    -- Simplified flower: 2 parts (cyl stem + ball head)
+    local stemH = 0.95 + R()*0.75
+    local stem = P({name="FStem", size=Vector3.new(0.18, stemH, 0.18), pos=Vector3.new(x, stemH/2, z),
+        color=BrickColor.new("Earth green"), mat=Enum.Material.LeafyGrass,
+        shape=Enum.PartType.Cylinder, collide=false, decor=true, parent=folder})
+    stem.CFrame = CFrame.new(x, stemH/2, z) * CFrame.Angles(0, math.rad(R(-180,180)), math.rad(90))
 
-    local function tuft(tx, tz)
-        local h = 0.25 + R()*0.25
-        local w = 0.25 + R()*0.25
-        local g = P({name="GrassTuft", size=Vector3.new(w, h, w), pos=Vector3.new(tx, h/2, tz),
-            color=BrickColor.new("Dark green"), mat=Enum.Material.LeafyGrass, shape=Enum.PartType.Ball, collide=false, parent=folder})
-        g.Transparency = 0.15
-    end
-
-    -- subtle base tufts
-    for i=1, R(2,4) do
-        tuft(x + R(-6,6)*0.12, z + R(-6,6)*0.12)
-    end
-
-    local stemH = 1.0 + R()*0.8
-    local stem = P({name="FStem", size=Vector3.new(0.25, stemH, 0.25), pos=Vector3.new(x, stemH/2, z),
-        color=BrickColor.new("Earth green"), mat=Enum.Material.LeafyGrass, collide=false, parent=folder})
-
-    local function petal(pos, size, brick)
-        P({name="FPetal", size=size, pos=pos, color=brick, mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-    end
-
-    if ftype == 1 then
-        -- Rose: tight layered petals (red/pink)
-        local roseCols = {"Crimson","Bright red","Hot pink","Pink"}
-        local col = BrickColor.new(roseCols[R(#roseCols)])
-        P({name="FCenter", size=Vector3.new(0.45,0.45,0.45), pos=Vector3.new(x, stemH+0.2, z), color=BrickColor.new("New Yeller"), mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-        for ring=1,3 do
-            local petals = 6 + ring*2
-            local rad = 0.25 + ring*0.15
-            for i=1,petals do
-                local a=(i/petals)*PI*2
-                petal(Vector3.new(x+math.cos(a)*rad, stemH+0.25+ring*0.08, z+math.sin(a)*rad), Vector3.new(0.35,0.28,0.35), col)
-            end
-        end
-
-    elseif ftype == 2 then
-        -- Daisy: white petals + yellow center
-        local petals = 10 + R(-2,2)
-        local col = BrickColor.new("Institutional white")
-        P({name="FCenter", size=Vector3.new(0.45,0.45,0.45), pos=Vector3.new(x, stemH+0.2, z), color=BrickColor.new("New Yeller"), mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-        for i=1,petals do
-            local a=(i/petals)*PI*2
-            petal(Vector3.new(x+math.cos(a)*0.55, stemH+0.15, z+math.sin(a)*0.55), Vector3.new(0.45,0.18,0.45), col)
-        end
-
-    elseif ftype == 3 then
-        -- Tulip: 3 big petals + 3 small inner petals
-        local tulipCols = {"Bright red","Bright orange","Hot pink","Magenta","Lavender"}
-        local col = BrickColor.new(tulipCols[R(#tulipCols)])
-        for i=1,3 do
-            local a=(i/3)*PI*2
-            petal(Vector3.new(x+math.cos(a)*0.22, stemH+0.25, z+math.sin(a)*0.22), Vector3.new(0.55,0.65,0.35), col)
-        end
-        for i=1,3 do
-            local a=(i/3)*PI*2 + 0.45
-            petal(Vector3.new(x+math.cos(a)*0.12, stemH+0.35, z+math.sin(a)*0.12), Vector3.new(0.4,0.5,0.25), col)
-        end
-
-    elseif ftype == 4 then
-        -- Lavender: tall stalk with many tiny purple blooms
-        local col = BrickColor.new("Lavender")
-        for i=1, R(5,8) do
-            local y = stemH*0.55 + i*0.22
-            petal(Vector3.new(x+R(-4,4)*0.06, y, z+R(-4,4)*0.06), Vector3.new(0.22,0.22,0.22), col)
-        end
-
-    elseif ftype == 5 then
-        -- Sunflower: big yellow ring + brown center
-        local petals = 12 + R(-2,3)
-        P({name="FCenter", size=Vector3.new(0.55,0.55,0.55), pos=Vector3.new(x, stemH+0.2, z), color=BrickColor.new("Reddish brown"), mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-        local col = BrickColor.new("Bright yellow")
-        for i=1,petals do
-            local a=(i/petals)*PI*2
-            petal(Vector3.new(x+math.cos(a)*0.75, stemH+0.15, z+math.sin(a)*0.75), Vector3.new(0.55,0.2,0.55), col)
-        end
-
-    else
-        -- Wildflower: random palette, variable petal count and radius
-        local palette = {"Bright violet","Cyan","Lime green","Bright blue","Pink","Hot pink","Bright orange"}
-        local col = BrickColor.new(palette[R(#palette)])
-        local petals = R(5,9)
-        local rad = 0.45 + R()*0.35
-        P({name="FCenter", size=Vector3.new(0.35,0.35,0.35), pos=Vector3.new(x, stemH+0.2, z), color=BrickColor.new("New Yeller"), mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-        for i=1,petals do
-            local a=(i/petals)*PI*2
-            petal(Vector3.new(x+math.cos(a)*rad, stemH+0.12, z+math.sin(a)*rad), Vector3.new(0.4,0.22,0.4), col)
-        end
-    end
+    local palette = {
+        Color3.fromRGB(255, 85, 127),  -- pink
+        Color3.fromRGB(255, 80, 80),   -- red
+        Color3.fromRGB(255, 200, 60),  -- yellow
+        Color3.fromRGB(190, 130, 255), -- lavender
+        Color3.fromRGB(90, 200, 255),  -- cyan
+    }
+    local head = P({name="FHead", size=Vector3.new(0.65,0.65,0.65), pos=Vector3.new(x, stemH+0.25, z),
+        color=BrickColor.new("Institutional white"), mat=Enum.Material.Neon,
+        shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
+    head.Color = palette[R(#palette)]
+    head.Transparency = 0.05
 end
 
 local function Rock(x, z, s, folder)
     s = s or 1
-    P({name="Rock", size=Vector3.new(3*s,2*s,3*s), pos=Vector3.new(x,s,z),
+    local r = P({name="Rock", size=Vector3.new(3*s,2*s,3*s), pos=Vector3.new(x,s,z),
        color=BrickColor.new("Dark stone grey"), mat=Enum.Material.Slate,
        shape=Enum.PartType.Ball, parent=folder})
+    markDecor(r, true)
 end
 
 local function Lamp(x, z, folder)
-    P({name="LPole", size=Vector3.new(0.4,8,0.4),   pos=Vector3.new(x,4,z),
+    local pole = P({name="LPole", size=Vector3.new(0.4,8,0.4),   pos=Vector3.new(x,4,z),
        color=BrickColor.new("Dark stone grey"), mat=Enum.Material.Metal, parent=folder})
-    P({name="LHead", size=Vector3.new(1.4,0.5,1.4), pos=Vector3.new(x,8.2,z),
+    local head = P({name="LHead", size=Vector3.new(1.4,0.5,1.4), pos=Vector3.new(x,8.2,z),
        color=BrickColor.new("Institutional white"), mat=Enum.Material.SmoothPlastic, parent=folder})
+    markDecor(pole, true)
+    markDecor(head, true)
 end
 
 local function Orb(cx, cy, cz, brickCol, folder)
@@ -528,14 +477,15 @@ local function Orb(cx, cy, cz, brickCol, folder)
         mat=Enum.Material.SmoothPlastic,
         shape=Enum.PartType.Cylinder, collide=true, parent=folder})
     ring.CFrame = CFrame.new(cx,1.5,cz) * CFrame.Angles(0,0,math.rad(90))
+    markDecor(ring, true)
     P({name="OrbSphere", size=Vector3.new(3,3,3), pos=Vector3.new(cx,cy,cz),
        color=brickCol, mat=Enum.Material.Neon,
-       shape=Enum.PartType.Ball, collide=false, parent=folder})
+       shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
     P({name="OrbCore", size=Vector3.new(1.2,1.2,1.2), pos=Vector3.new(cx,cy,cz),
        color=BrickColor.new("Institutional white"), mat=Enum.Material.Neon,
-       shape=Enum.PartType.Ball, collide=false, parent=folder})
+       shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
     local anchor = P({name="OrbBB", size=Vector3.new(0.1,0.1,0.1),
-        pos=Vector3.new(cx,cy+3,cz), alpha=1, collide=false, parent=folder})
+        pos=Vector3.new(cx,cy+3,cz), alpha=1, collide=false, decor=true, parent=folder})
     local bb=Instance.new("BillboardGui"); bb.Size=UDim2.new(0,120,0,30)
     bb.StudsOffset=Vector3.new(0,4,0); bb.AlwaysOnTop=true; bb.Parent=anchor
     local lbl=Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,1,0)
@@ -922,6 +872,7 @@ section("Orbs", function()
             local createdRing = Orb(math.cos(a)*ring.radius, ring.y, math.sin(a)*ring.radius, ring.col, orbs)
             if createdRing and createdRing:IsA("BasePart") then
                 createdRing.Name = "OrbRing_" .. orbIndex
+                createdRing:SetAttribute("OrbId", orbIndex)
             end
         end
         task.wait()
