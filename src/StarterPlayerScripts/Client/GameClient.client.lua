@@ -23,7 +23,13 @@ if not game:IsLoaded() then
 end
 
 local player    = Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
+local playerGui = player:WaitForChild("PlayerGui", 30)
+if not playerGui then
+    warn("[CLIENT] PlayerGui not found after 30s, using fallback")
+    playerGui = Instance.new("ScreenGui")
+    playerGui.Name = "PlayerGui"
+    playerGui.Parent = player
+end
 
 print("[CLIENT] v0.22 starting (game loaded)")
 
@@ -358,6 +364,7 @@ task.spawn(function()
     local orbStateChanged = Ev("OrbStateChanged")
     local buyPlotEv    = Ev("PurchasePlot")
     local plotPurchEv  = Ev("PlotPurchased")
+    local plotSoldEv   = Ev("PlotSold")
     local upgradeEv    = Ev("UpgradeHouse")
     local placeCompEv  = Ev("PlaceComputer")
     local compPlacEv   = Ev("ComputerPlaced")
@@ -421,8 +428,97 @@ task.spawn(function()
 
     if plotPurchEv then
         plotPurchEv.OnClientEvent:Connect(function(pid, uid, uname)
+            -- Plot ownership visuals
+            local function setOwnerSign(plotRoot)
+                local candidates = {
+                    plotRoot:FindFirstChild("Sign", true),
+                    plotRoot:FindFirstChild("BillboardGui", true),
+                    plotRoot:FindFirstChild("SurfaceGui", true),
+                }
+
+                for _, inst in ipairs(candidates) do
+                    if inst then
+                        local label = inst:FindFirstChildWhichIsA("TextLabel", true)
+                        if label then
+                            label.Text = tostring(uname or "Unknown")
+                            return
+                        end
+                    end
+                end
+            end
+
+            local plotBase = workspace:FindFirstChild("Plot_" .. tostring(pid)) or workspace:FindFirstChild(tostring(pid))
+            if plotBase then
+                local ownerColor = (uid == player.UserId) and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(100, 150, 255)
+
+                local basePart = plotBase:IsA("BasePart") and plotBase or plotBase:FindFirstChildWhichIsA("BasePart", true)
+                if basePart then
+                    basePart.Color = ownerColor
+                end
+
+                setOwnerSign(plotBase)
+
+                local highlight = Instance.new("Highlight")
+                highlight.Name = "OwnerPulse"
+                highlight.FillColor = ownerColor
+                highlight.OutlineColor = Color3.new(1, 1, 1)
+                highlight.FillTransparency = 0.7
+                highlight.Parent = plotBase
+                task.delay(3, function()
+                    if highlight and highlight.Parent then
+                        highlight:Destroy()
+                    end
+                end)
+
+                if basePart then
+                    local att = Instance.new("Attachment")
+                    att.Name = "OwnerPulseAttachment"
+                    att.Parent = basePart
+                    local emit = Instance.new("ParticleEmitter")
+                    emit.Name = "OwnerPulseEmitter"
+                    emit.Texture = "rbxassetid://243660364"
+                    emit.Lifetime = NumberRange.new(0.35, 0.6)
+                    emit.Speed = NumberRange.new(4, 8)
+                    emit.Rate = 0
+                    emit.Rotation = NumberRange.new(0, 360)
+                    emit.RotSpeed = NumberRange.new(-180, 180)
+                    emit.SpreadAngle = Vector2.new(360, 360)
+                    emit.Color = ColorSequence.new(ownerColor)
+                    emit.LightEmission = 0.6
+                    emit.Size = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 0.5),
+                        NumberSequenceKeypoint.new(1, 0),
+                    })
+                    emit.Transparency = NumberSequence.new({
+                        NumberSequenceKeypoint.new(0, 0.15),
+                        NumberSequenceKeypoint.new(1, 1),
+                    })
+                    emit.Parent = att
+                    emit:Emit(20)
+                    task.delay(1, function()
+                        if att and att.Parent then
+                            att:Destroy()
+                        end
+                    end)
+                end
+            else
+                warn("[CLIENT] PlotPurchased: could not find plot base for pid=" .. tostring(pid))
+            end
+
             if uid ~= player.UserId then
                 Notify(uname.." bought a plot!", Color3.fromRGB(255,210,80))
+            end
+        end)
+    end
+
+    if plotSoldEv then
+        plotSoldEv.OnClientEvent:Connect(function(pid)
+            local plotBase = workspace:FindFirstChild("Plot_" .. tostring(pid)) or workspace:FindFirstChild(tostring(pid))
+            if plotBase then
+                local old = plotBase:FindFirstChild("OwnerPulse")
+                if old then
+                    old:Destroy()
+                end
             end
         end)
     end

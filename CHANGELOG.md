@@ -12,7 +12,37 @@ Conventions:
 
 ---
 
-## v0.22 — 2026-06 (Current)
+## v0.23 — 2026-06
+
+### Server-authoritative orb state
+- **Added** per-orb cooldown tracking on server; orbs cannot be multi-collected
+- **Added** `OrbStateChanged` RemoteEvent for real-time orb availability
+- **Changed** orb collection to use orbId instead of position
+- **Fixed** anti-cheat no longer kicks when DataOrbs folder is missing
+
+### Data API hardening
+- **Changed** `GetPlayerData` to return sanitized `{ok, data}` snapshot
+- **Added** `PlayerDataReady` RemoteEvent; client waits before showing Stats
+- **Fixed** Stats panel handles loading state gracefully with retry
+
+### Plot interaction
+- **Changed** Buy Plot purchases nearest unowned plot (no hard-coded cycling)
+- **Changed** Plot pricing to purchase-index based (100 × 1.5^n)
+
+### Performance
+- **Changed** Flowers reduced from ~7 parts to 2 parts each
+- **Changed** Bushes reduced from ~3 parts to 1 part each
+- **Added** CanQuery=false, CanTouch=false on decorative parts
+- **Added** OrbRing unique naming (OrbRing_1, OrbRing_2, …)
+
+### Telemetry
+- **Added** rate-limited invalid-remote-call warnings
+
+### Client stability
+- **Added** timeout on PlayerGui WaitForChild with fallback
+- **Added** plot ownership highlight visuals on purchase/sell
+
+## v0.22 — 2026-06
 
 ### What’s new
 
