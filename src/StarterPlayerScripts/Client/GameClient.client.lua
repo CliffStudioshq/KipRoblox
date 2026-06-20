@@ -1,5 +1,5 @@
 --[[
-    GameClient.client.lua — DataTycoon v0.22
+    GameClient.client.lua — DataTycoon v0.23
     Key fixes:
       - game.Loaded:Wait() before ANY WaitForChild (fixes ERR/connection failed)
       - Number formatter (1234 -> "1.2K")
@@ -31,7 +31,7 @@ if not playerGui then
     playerGui.Parent = player
 end
 
-print("[CLIENT] v0.22 starting (game loaded)")
+print("[CLIENT] v0.23 starting (game loaded)")
 
 -- ============================================================
 -- UTIL
