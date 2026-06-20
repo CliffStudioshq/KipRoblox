@@ -124,6 +124,17 @@ dpsLabel.Text = "⚡ 1/s"; dpsLabel.TextColor3 = C.CYAN
 dpsLabel.TextSize = 13; dpsLabel.Font = Enum.Font.GothamBold
 dpsLabel.TextXAlignment = Enum.TextXAlignment.Left; dpsLabel.Parent = dataBar
 
+-- ---- TITLE (top bar) ----
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(0, 60, 1, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Text = ""
+titleLabel.TextColor3 = C.GOLD
+titleLabel.TextSize = 13
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = dataBar
+
 -- ---- SIDEBAR ----
 local sidebar = Instance.new("Frame")
 sidebar.Size = UDim2.new(0,170,0,0); sidebar.Position = UDim2.new(0,10,0,72)
@@ -148,6 +159,316 @@ local dailyBtn   = Btn("🎁  Daily Reward",   C.ORANGE)
 local shopBtn    = Btn("🛒  Shop",            C.BLUE)
 local buyPlotBtn = Btn("📦  Buy Plot  [E]",  C.GREEN)
 local statsBtn   = Btn("📊  Stats",           Color3.fromRGB(50,50,75))
+
+-- ============================================================
+-- v0.30 NEW UI: Plot Info Frame (bottom-left)
+-- ============================================================
+local plotInfoFrame = Instance.new("Frame")
+plotInfoFrame.Size = UDim2.new(0, 200, 0, 120)
+plotInfoFrame.Position = UDim2.new(0, 10, 1, -130)
+plotInfoFrame.BackgroundColor3 = C.BG
+plotInfoFrame.BackgroundTransparency = 0.1
+plotInfoFrame.Visible = false
+plotInfoFrame.Parent = gui
+corner(plotInfoFrame, 12)
+stroke(plotInfoFrame, C.BORDER)
+
+local plotInfoPad = Instance.new("UIPadding")
+plotInfoPad.PaddingTop = UDim.new(0, 8)
+plotInfoPad.PaddingBottom = UDim.new(0, 8)
+plotInfoPad.PaddingLeft = UDim.new(0, 10)
+plotInfoPad.PaddingRight = UDim.new(0, 10)
+plotInfoPad.Parent = plotInfoFrame
+
+local plotInfoLayout = Instance.new("UIListLayout")
+plotInfoLayout.Padding = UDim.new(0, 4)
+plotInfoLayout.Parent = plotInfoFrame
+
+local plotInfoTitle = Instance.new("TextLabel")
+plotInfoTitle.Size = UDim2.new(1, 0, 0, 18)
+plotInfoTitle.BackgroundTransparency = 1
+plotInfoTitle.Text = "📦 My Plot"
+plotInfoTitle.TextColor3 = C.WHITE
+plotInfoTitle.TextSize = 14
+plotInfoTitle.Font = Enum.Font.GothamBold
+plotInfoTitle.TextXAlignment = Enum.TextXAlignment.Left
+plotInfoTitle.Parent = plotInfoFrame
+
+local plotBuildingLabel = Instance.new("TextLabel")
+plotBuildingLabel.Size = UDim2.new(1, 0, 0, 16)
+plotBuildingLabel.BackgroundTransparency = 1
+plotBuildingLabel.Text = "Building: —"
+plotBuildingLabel.TextColor3 = C.DIM
+plotBuildingLabel.TextSize = 12
+plotBuildingLabel.Font = Enum.Font.Gotham
+plotBuildingLabel.TextXAlignment = Enum.TextXAlignment.Left
+plotBuildingLabel.Parent = plotInfoFrame
+
+local plotDpsBonusLabel = Instance.new("TextLabel")
+plotDpsBonusLabel.Size = UDim2.new(1, 0, 0, 16)
+plotDpsBonusLabel.BackgroundTransparency = 1
+plotDpsBonusLabel.Text = "DPS Bonus: —"
+plotDpsBonusLabel.TextColor3 = C.CYAN
+plotDpsBonusLabel.TextSize = 12
+plotDpsBonusLabel.Font = Enum.Font.Gotham
+plotDpsBonusLabel.TextXAlignment = Enum.TextXAlignment.Left
+plotDpsBonusLabel.Parent = plotInfoFrame
+
+local plotDecorTitle = Instance.new("TextLabel")
+plotDecorTitle.Size = UDim2.new(1, 0, 0, 14)
+plotDecorTitle.BackgroundTransparency = 1
+plotDecorTitle.Text = "Decorations"
+plotDecorTitle.TextColor3 = C.WHITE
+plotDecorTitle.TextSize = 12
+plotDecorTitle.Font = Enum.Font.GothamBold
+plotDecorTitle.TextXAlignment = Enum.TextXAlignment.Left
+plotDecorTitle.Parent = plotInfoFrame
+
+local decorSlotsFrame = Instance.new("Frame")
+decorSlotsFrame.Size = UDim2.new(1, 0, 0, 22)
+decorSlotsFrame.BackgroundTransparency = 1
+decorSlotsFrame.Parent = plotInfoFrame
+
+local decorSlotsLayout = Instance.new("UIListLayout")
+decorSlotsLayout.FillDirection = Enum.FillDirection.Horizontal
+decorSlotsLayout.Padding = UDim.new(0, 6)
+decorSlotsLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
+decorSlotsLayout.Parent = decorSlotsFrame
+
+local decorSlotLabels = {}
+for i = 1, 3 do
+    local slot = Instance.new("TextLabel")
+    slot.Name = "Slot" .. tostring(i)
+    slot.Size = UDim2.new(0, 56, 1, 0)
+    slot.BackgroundColor3 = C.CARD
+    slot.BackgroundTransparency = 0.1
+    slot.Text = "Empty"
+    slot.TextColor3 = C.DIM
+    slot.TextSize = 11
+    slot.Font = Enum.Font.GothamBold
+    slot.Parent = decorSlotsFrame
+    corner(slot, 8)
+    stroke(slot, C.BORDER)
+    decorSlotLabels[i] = slot
+end
+
+-- ============================================================
+-- v0.30 NEW UI: Shop GUI (F key)
+-- ============================================================
+local shopFrame = Instance.new("Frame")
+shopFrame.Size = UDim2.new(0, 500, 0, 400)
+shopFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
+shopFrame.BackgroundColor3 = C.BG
+shopFrame.BackgroundTransparency = 0.05
+shopFrame.Visible = false
+shopFrame.Parent = gui
+corner(shopFrame, 16)
+stroke(shopFrame, C.BORDER)
+
+local shopTop = Instance.new("Frame")
+shopTop.Size = UDim2.new(1, -20, 0, 44)
+shopTop.Position = UDim2.new(0, 10, 0, 10)
+shopTop.BackgroundTransparency = 1
+shopTop.Parent = shopFrame
+
+local shopTitle2 = Instance.new("TextLabel")
+shopTitle2.Size = UDim2.new(0.5, 0, 1, 0)
+shopTitle2.BackgroundTransparency = 1
+shopTitle2.Text = "🛒 Shop"
+shopTitle2.TextColor3 = C.WHITE
+shopTitle2.TextSize = 18
+shopTitle2.Font = Enum.Font.GothamBold
+shopTitle2.TextXAlignment = Enum.TextXAlignment.Left
+shopTitle2.Parent = shopTop
+
+local shopDataLabel = Instance.new("TextLabel")
+shopDataLabel.Size = UDim2.new(0.5, 0, 1, 0)
+shopDataLabel.BackgroundTransparency = 1
+shopDataLabel.Text = "💰 0"
+shopDataLabel.TextColor3 = C.GREEN
+shopDataLabel.TextSize = 16
+shopDataLabel.Font = Enum.Font.GothamBold
+shopDataLabel.TextXAlignment = Enum.TextXAlignment.Right
+shopDataLabel.Parent = shopTop
+
+local shopClose = Instance.new("TextButton")
+shopClose.Size = UDim2.new(0, 34, 0, 34)
+shopClose.Position = UDim2.new(1, -44, 0, 10)
+shopClose.BackgroundColor3 = Color3.fromRGB(50, 50, 75)
+shopClose.Text = "✕"
+shopClose.TextColor3 = C.WHITE
+shopClose.TextSize = 18
+shopClose.Font = Enum.Font.GothamBold
+shopClose.Parent = shopFrame
+corner(shopClose, 10)
+
+local shopTabs = Instance.new("Frame")
+shopTabs.Size = UDim2.new(1, -20, 0, 36)
+shopTabs.Position = UDim2.new(0, 10, 0, 54)
+shopTabs.BackgroundTransparency = 1
+shopTabs.Parent = shopFrame
+
+local shopTabsLayout = Instance.new("UIListLayout")
+shopTabsLayout.FillDirection = Enum.FillDirection.Horizontal
+shopTabsLayout.Padding = UDim.new(0, 8)
+shopTabsLayout.Parent = shopTabs
+
+local function TabBtn(text)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 155, 1, 0)
+    b.BackgroundColor3 = C.CARD
+    b.BackgroundTransparency = 0.1
+    b.Text = text
+    b.TextColor3 = C.WHITE
+    b.TextSize = 13
+    b.Font = Enum.Font.GothamBold
+    b.Parent = shopTabs
+    corner(b, 10)
+    stroke(b, C.BORDER)
+    return b
+end
+
+local tabPlotBtn = TabBtn("📦 Plot Upgrades")
+local tabPlayerBtn = TabBtn("⚡ Player Upgrades")
+local tabFunBtn = TabBtn("✨ Fun")
+
+local shopContent = Instance.new("Frame")
+shopContent.Size = UDim2.new(1, -20, 1, -100)
+shopContent.Position = UDim2.new(0, 10, 0, 92)
+shopContent.BackgroundTransparency = 1
+shopContent.Parent = shopFrame
+
+local function MakeScrolling(name)
+    local sc = Instance.new("ScrollingFrame")
+    sc.Name = name
+    sc.Size = UDim2.new(1, 0, 1, 0)
+    sc.BackgroundTransparency = 1
+    sc.ScrollBarThickness = 6
+    sc.CanvasSize = UDim2.new(0, 0, 0, 0)
+    sc.AutomaticCanvasSize = Enum.AutomaticSize.Y
+    sc.Visible = false
+    sc.Parent = shopContent
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0, 6)
+    pad.PaddingBottom = UDim.new(0, 10)
+    pad.PaddingLeft = UDim.new(0, 2)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.Parent = sc
+    local layout = Instance.new("UIListLayout")
+    layout.Padding = UDim.new(0, 8)
+    layout.Parent = sc
+    return sc
+end
+
+local plotTab = MakeScrolling("PlotTab")
+local playerTab = MakeScrolling("PlayerTab")
+local funTab = MakeScrolling("FunTab")
+
+local function SelectTab(which)
+    plotTab.Visible = which == "plot"
+    playerTab.Visible = which == "player"
+    funTab.Visible = which == "fun"
+
+    tabPlotBtn.BackgroundColor3 = (which == "plot") and C.BLUE or C.CARD
+    tabPlayerBtn.BackgroundColor3 = (which == "player") and C.BLUE or C.CARD
+    tabFunBtn.BackgroundColor3 = (which == "fun") and C.BLUE or C.CARD
+end
+SelectTab("plot")
+
+tabPlotBtn.MouseButton1Click:Connect(function() SelectTab("plot") end)
+tabPlayerBtn.MouseButton1Click:Connect(function() SelectTab("player") end)
+tabFunBtn.MouseButton1Click:Connect(function() SelectTab("fun") end)
+
+local function ShopRow(parent, icon, name, desc)
+    local row = Instance.new("Frame")
+    row.Size = UDim2.new(1, -2, 0, 64)
+    row.BackgroundColor3 = C.CARD
+    row.BackgroundTransparency = 0.08
+    row.Parent = parent
+    corner(row, 12)
+    stroke(row, C.BORDER)
+
+    local pad = Instance.new("UIPadding")
+    pad.PaddingLeft = UDim.new(0, 10)
+    pad.PaddingRight = UDim.new(0, 10)
+    pad.PaddingTop = UDim.new(0, 8)
+    pad.PaddingBottom = UDim.new(0, 8)
+    pad.Parent = row
+
+    local iconL = Instance.new("TextLabel")
+    iconL.Size = UDim2.new(0, 38, 1, 0)
+    iconL.BackgroundTransparency = 1
+    iconL.Text = icon or ""
+    iconL.TextColor3 = C.WHITE
+    iconL.TextSize = 20
+    iconL.Font = Enum.Font.GothamBold
+    iconL.TextXAlignment = Enum.TextXAlignment.Left
+    iconL.Parent = row
+
+    local textWrap = Instance.new("Frame")
+    textWrap.Size = UDim2.new(1, -160, 1, 0)
+    textWrap.Position = UDim2.new(0, 38, 0, 0)
+    textWrap.BackgroundTransparency = 1
+    textWrap.Parent = row
+
+    local nm = Instance.new("TextLabel")
+    nm.Size = UDim2.new(1, 0, 0, 20)
+    nm.BackgroundTransparency = 1
+    nm.Text = name or "Upgrade"
+    nm.TextColor3 = C.WHITE
+    nm.TextSize = 14
+    nm.Font = Enum.Font.GothamBold
+    nm.TextXAlignment = Enum.TextXAlignment.Left
+    nm.Parent = textWrap
+
+    local ds = Instance.new("TextLabel")
+    ds.Size = UDim2.new(1, 0, 0, 18)
+    ds.Position = UDim2.new(0, 0, 0, 22)
+    ds.BackgroundTransparency = 1
+    ds.Text = desc or ""
+    ds.TextColor3 = C.DIM
+    ds.TextSize = 12
+    ds.Font = Enum.Font.Gotham
+    ds.TextXAlignment = Enum.TextXAlignment.Left
+    ds.TextWrapped = true
+    ds.Parent = textWrap
+
+    local meta = Instance.new("TextLabel")
+    meta.Size = UDim2.new(0, 76, 1, 0)
+    meta.Position = UDim2.new(1, -150, 0, 0)
+    meta.BackgroundTransparency = 1
+    meta.Text = ""
+    meta.TextColor3 = C.DIM
+    meta.TextSize = 11
+    meta.Font = Enum.Font.GothamBold
+    meta.TextXAlignment = Enum.TextXAlignment.Right
+    meta.Parent = row
+
+    local buy = Instance.new("TextButton")
+    buy.Size = UDim2.new(0, 90, 0, 34)
+    buy.Position = UDim2.new(1, -90, 0.5, -17)
+    buy.BackgroundColor3 = C.GREEN
+    buy.Text = "Buy"
+    buy.TextColor3 = Color3.new(1,1,1)
+    buy.TextSize = 13
+    buy.Font = Enum.Font.GothamBold
+    buy.Parent = row
+    corner(buy, 10)
+    return row, buy, meta
+end
+
+-- Placeholder rows (server-driven prices/levels should fill these later)
+ShopRow(plotTab, "🏗️", "Upgrade Building", "Increase plot output")
+ShopRow(plotTab, "🖼️", "Decoration Slot", "Add or swap decorations")
+
+ShopRow(playerTab, "⚡", "Data Rate", "Earn more data per second")
+ShopRow(playerTab, "👟", "Speed", "Move faster")
+ShopRow(playerTab, "🧲", "Orb Magnetism", "Collect orbs from farther away")
+
+ShopRow(funTab, "✨", "Title", "Show off with a title")
+ShopRow(funTab, "🌈", "Particle Trail", "A subtle trail")
+ShopRow(funTab, "🔥", "Fire Trail", "Spicy footsteps")
+ShopRow(funTab, "🧸", "Pet", "A buddy that follows you")
 
 -- Stats should stay disabled until server confirms data is loaded
 local statsEnabled = false
@@ -178,6 +499,299 @@ local function Notify(msg, color)
         end
         notifBusy = false
     end)
+end
+
+-- ============================================================
+-- v0.30 CLIENT STATE (plot + upgrades)
+-- ============================================================
+local currentData = 0
+local myTitleText = ""
+local lastPlayerUpgrade = {}
+local plotState = {
+    plotId = nil,
+    buildingName = nil,
+    dpsBonus = nil,
+    decorations = {"Empty", "Empty", "Empty"},
+}
+
+local function SetTitle(text)
+    myTitleText = tostring(text or "")
+    titleLabel.Text = (myTitleText ~= "" and ("[" .. myTitleText .. "]") or "")
+end
+
+local function UpdatePlotInfoUI()
+    plotBuildingLabel.Text = "Building: " .. tostring(plotState.buildingName or "—")
+    if plotState.dpsBonus ~= nil then
+        plotDpsBonusLabel.Text = "DPS Bonus: +" .. tostring(plotState.dpsBonus)
+    else
+        plotDpsBonusLabel.Text = "DPS Bonus: —"
+    end
+    for i = 1, 3 do
+        local v = plotState.decorations[i]
+        local txt = (v and tostring(v) ~= "" and tostring(v)) or "Empty"
+        decorSlotLabels[i].Text = txt
+        decorSlotLabels[i].TextColor3 = (txt == "Empty") and C.DIM or C.WHITE
+    end
+end
+
+local function SetCurrentData(v)
+    currentData = tonumber(v) or 0
+    if shopDataLabel then
+        shopDataLabel.Text = "💰 " .. fmt(currentData)
+    end
+end
+
+-- Billboard prompts on plot (best-effort; depends on server plot model naming)
+local plotBillboards = {}
+local function ClearPlotBillboards()
+    for _, g in ipairs(plotBillboards) do
+        if g and g.Parent then g:Destroy() end
+    end
+    plotBillboards = {}
+end
+
+local function MakeBillboard(part, title, subtitle)
+    local bb = Instance.new("BillboardGui")
+    bb.Name = "UpgradeBillboard"
+    bb.Size = UDim2.new(0, 200, 0, 60)
+    bb.StudsOffset = Vector3.new(0, 3.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Adornee = part
+    bb.Parent = part
+
+    local fr = Instance.new("Frame")
+    fr.Size = UDim2.new(1, 0, 1, 0)
+    fr.BackgroundColor3 = C.BG
+    fr.BackgroundTransparency = 0.15
+    fr.Parent = bb
+    corner(fr, 10)
+    stroke(fr, C.BORDER)
+
+    local tl = Instance.new("TextLabel")
+    tl.Size = UDim2.new(1, -10, 0, 22)
+    tl.Position = UDim2.new(0, 5, 0, 4)
+    tl.BackgroundTransparency = 1
+    tl.Text = title or "Upgrade"
+    tl.TextColor3 = C.WHITE
+    tl.TextSize = 14
+    tl.Font = Enum.Font.GothamBold
+    tl.TextXAlignment = Enum.TextXAlignment.Left
+    tl.Parent = fr
+
+    local sl = Instance.new("TextLabel")
+    sl.Size = UDim2.new(1, -10, 0, 18)
+    sl.Position = UDim2.new(0, 5, 0, 28)
+    sl.BackgroundTransparency = 1
+    sl.Text = subtitle or "Press [E]"
+    sl.TextColor3 = C.DIM
+    sl.TextSize = 12
+    sl.Font = Enum.Font.Gotham
+    sl.TextXAlignment = Enum.TextXAlignment.Left
+    sl.Parent = fr
+
+    return bb
+end
+
+local function TryAttachPlotBillboards()
+    ClearPlotBillboards()
+    local plotRoot = nil
+    if plotState.plotId then
+        plotRoot = workspace:FindFirstChild("Plot_" .. tostring(plotState.plotId)) or workspace:FindFirstChild(tostring(plotState.plotId))
+    end
+    if not plotRoot then
+        for _, inst in ipairs(workspace:GetChildren()) do
+            if inst.Name:match("^Plot_") then
+                local sign = inst:FindFirstChild("Sign", true)
+                local bb = sign and sign:FindFirstChildWhichIsA("BillboardGui", true)
+                local lbl = bb and bb:FindFirstChildWhichIsA("TextLabel", true)
+                if lbl and lbl.Text == player.Name then
+                    plotRoot = inst
+                    break
+                end
+            end
+        end
+    end
+    if not plotRoot then return end
+
+    local buildingPart = plotRoot:FindFirstChild("BuildingUpgrade", true) or plotRoot:FindFirstChild("UpgradeBuilding", true)
+    if buildingPart and buildingPart:IsA("BasePart") then
+        table.insert(plotBillboards, MakeBillboard(buildingPart, "🏗️ Building", "Press [E] to upgrade"))
+    end
+    for i = 1, 3 do
+        local p = plotRoot:FindFirstChild("DecorSlot" .. tostring(i), true) or plotRoot:FindFirstChild("Decoration" .. tostring(i), true)
+        if p and p:IsA("BasePart") then
+            local name = plotState.decorations[i] or "Empty"
+            table.insert(plotBillboards, MakeBillboard(p, "🖼️ Decor " .. tostring(i), "Current: " .. tostring(name) .. "  [E]"))
+        end
+    end
+end
+
+-- ============================================================
+-- v0.30 VISUALS: orb magnetism + fun upgrades
+-- ============================================================
+local orbRangeRing = nil
+local funFx = { trail = nil, auraLight = nil, auraParticles = nil, fire = nil, titleBillboard = nil, petModel = nil }
+
+local function EnsureOrbRing(char, radius)
+    if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    if radius <= 0 then
+        if orbRangeRing and orbRangeRing.Parent then orbRangeRing:Destroy() end
+        orbRangeRing = nil
+        return
+    end
+    if not orbRangeRing or not orbRangeRing.Parent then
+        local p = Instance.new("Part")
+        p.Name = "OrbRangeRing"
+        p.Shape = Enum.PartType.Cylinder
+        p.Transparency = 0.8
+        p.BrickColor = BrickColor.new("Bright blue")
+        p.Anchored = true
+        p.CanCollide = false
+        p.Material = Enum.Material.Neon
+        p.Parent = char
+        orbRangeRing = p
+    end
+    orbRangeRing.Size = Vector3.new(0.2, radius * 2, radius * 2)
+    orbRangeRing.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, 0, math.rad(90))
+end
+
+local function ApplyFunUpgrades(char, upgrades)
+    if type(upgrades) ~= "table" then return end
+    local hrp = char and char:FindFirstChild("HumanoidRootPart")
+    local head = char and char:FindFirstChild("Head")
+    if not hrp then return end
+
+    if upgrades.particleTrail and upgrades.particleTrail > 0 then
+        if not funFx.trail or not funFx.trail.Parent then
+            local pe = Instance.new("ParticleEmitter")
+            pe.Name = "FunTrail"
+            pe.Texture = "rbxassetid://243660364"
+            pe.Rate = 12
+            pe.Lifetime = NumberRange.new(0.35, 0.6)
+            pe.Speed = NumberRange.new(0.5, 1.5)
+            pe.SpreadAngle = Vector2.new(20, 20)
+            pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.35), NumberSequenceKeypoint.new(1, 0) })
+            pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1) })
+            pe.Color = ColorSequence.new(C.BLUE)
+            pe.Parent = hrp
+            funFx.trail = pe
+        end
+    elseif funFx.trail then
+        funFx.trail:Destroy(); funFx.trail = nil
+    end
+
+    if upgrades.aura and upgrades.aura > 0 then
+        if not funFx.auraLight or not funFx.auraLight.Parent then
+            local l = Instance.new("PointLight")
+            l.Name = "FunAuraLight"
+            l.Brightness = 0.8
+            l.Range = 10
+            l.Color = C.PURPLE
+            l.Parent = hrp
+            funFx.auraLight = l
+        end
+        if not funFx.auraParticles or not funFx.auraParticles.Parent then
+            local pe = Instance.new("ParticleEmitter")
+            pe.Name = "FunAuraParticles"
+            pe.Texture = "rbxassetid://243660364"
+            pe.Rate = 8
+            pe.Lifetime = NumberRange.new(0.6, 1.0)
+            pe.Speed = NumberRange.new(0.2, 0.6)
+            pe.SpreadAngle = Vector2.new(360, 360)
+            pe.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.25), NumberSequenceKeypoint.new(1, 0) })
+            pe.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.45), NumberSequenceKeypoint.new(1, 1) })
+            pe.Color = ColorSequence.new(C.PURPLE)
+            pe.Parent = hrp
+            funFx.auraParticles = pe
+        end
+    else
+        if funFx.auraLight then funFx.auraLight:Destroy(); funFx.auraLight = nil end
+        if funFx.auraParticles then funFx.auraParticles:Destroy(); funFx.auraParticles = nil end
+    end
+
+    if upgrades.fireTrail and upgrades.fireTrail > 0 then
+        if not funFx.fire or not funFx.fire.Parent then
+            local f = Instance.new("Fire")
+            f.Name = "FunFire"
+            f.Heat = 2
+            f.Size = 3
+            f.Parent = hrp
+            funFx.fire = f
+        end
+    elseif funFx.fire then
+        funFx.fire:Destroy(); funFx.fire = nil
+    end
+
+    if upgrades.title and tostring(upgrades.title) ~= "" and head then
+        SetTitle(upgrades.title)
+        if not funFx.titleBillboard or not funFx.titleBillboard.Parent then
+            local bb = Instance.new("BillboardGui")
+            bb.Name = "TitleBillboard"
+            bb.Size = UDim2.new(0, 200, 0, 40)
+            bb.StudsOffset = Vector3.new(0, 2.6, 0)
+            bb.AlwaysOnTop = true
+            bb.Adornee = head
+            bb.Parent = head
+            local tl = Instance.new("TextLabel")
+            tl.Size = UDim2.new(1, 0, 1, 0)
+            tl.BackgroundTransparency = 1
+            tl.Text = tostring(upgrades.title)
+            tl.TextColor3 = C.GOLD
+            tl.TextSize = 16
+            tl.Font = Enum.Font.GothamBold
+            tl.TextStrokeTransparency = 0.6
+            tl.TextStrokeColor3 = Color3.new(0,0,0)
+            tl.Parent = bb
+            funFx.titleBillboard = bb
+        else
+            local tl = funFx.titleBillboard:FindFirstChildWhichIsA("TextLabel")
+            if tl then tl.Text = tostring(upgrades.title) end
+        end
+    else
+        SetTitle("")
+        if funFx.titleBillboard then funFx.titleBillboard:Destroy(); funFx.titleBillboard = nil end
+    end
+
+    if upgrades.pet and upgrades.pet > 0 then
+        if not funFx.petModel or not funFx.petModel.Parent then
+            local m = Instance.new("Model")
+            m.Name = "Pet"
+            local body = Instance.new("Part")
+            body.Name = "Body"
+            body.Size = Vector3.new(1.5, 1.5, 1.5)
+            body.Shape = Enum.PartType.Ball
+            body.Material = Enum.Material.Neon
+            body.Color = C.BLUE
+            body.Anchored = false
+            body.CanCollide = false
+            body.Parent = m
+            m.PrimaryPart = body
+            m.Parent = workspace
+            local att0 = Instance.new("Attachment")
+            att0.Parent = body
+            local lv = Instance.new("LinearVelocity")
+            lv.Name = "PetVelocity"
+            lv.Attachment0 = att0
+            lv.MaxForce = math.huge
+            lv.VectorVelocity = Vector3.zero
+            lv.Parent = body
+            funFx.petModel = m
+            task.spawn(function()
+                while m and m.Parent and char and char.Parent do
+                    task.wait(0.1)
+                    local hrp2 = char:FindFirstChild("HumanoidRootPart")
+                    if not hrp2 then continue end
+                    local target = hrp2.Position + Vector3.new(2, 1, 2)
+                    local delta = target - body.Position
+                    lv.VectorVelocity = delta * 4
+                end
+            end)
+        end
+    else
+        if funFx.petModel then funFx.petModel:Destroy(); funFx.petModel = nil end
+    end
 end
 
 -- ---- SHOP PANEL ----
@@ -300,6 +914,8 @@ local function SetData(v)
     dataLabel.Text = "💰  "..fmt(v)
     dataLabel.TextColor3 = Color3.fromRGB(120, 255, 160)
     task.delay(0.15, function() dataLabel.TextColor3 = C.GREEN end)
+    -- v0.30 shop currency display
+    SetCurrentData(v)
 end
 
 local function SetDps(dps)
@@ -330,9 +946,10 @@ task.spawn(function()
 
     local hv = ls:WaitForChild("House", 10)
     if hv then
-        houseLabel.Text = "🏠 "..(HOUSE_NAMES[hv.Value] or "Shack")
-        hv.Changed:Connect(function(v)
-            houseLabel.Text = "🏠 "..(HOUSE_NAMES[v] or "Shack")
+        -- v0.30 HUD: house display removed (keep leaderstat connection to avoid breaking older servers)
+        houseLabel.Text = ""
+        hv.Changed:Connect(function()
+            houseLabel.Text = ""
         end)
     end
 end)
@@ -374,6 +991,11 @@ task.spawn(function()
     local dataReadyEv  = Ev("PlayerDataReady")
     local bridgeBuiltEv = Ev("BridgeBuilt")
     local bridgeRemEv   = Ev("BridgeRemoved")
+
+    -- v0.30 upgrade events
+    local plotUpgEv = Ev("PlotUpgraded")
+    local decorChangedEv = Ev("DecorationChanged")
+    local playerUpgEv = Ev("PlayerUpgraded")
 
     if dataReadyEv then
         dataReadyEv.OnClientEvent:Connect(function()
@@ -423,7 +1045,16 @@ task.spawn(function()
     end
     buyPlotBtn.MouseButton1Click:Connect(BuyNext)
     UserInputService.InputBegan:Connect(function(inp, gp)
-        if not gp and inp.KeyCode == Enum.KeyCode.E then BuyNext() end
+        if gp then return end
+        if inp.KeyCode == Enum.KeyCode.E then
+            -- Interact: legacy plot purchase OR plot upgrade/decoration in v0.30
+            if plotBillboards and #plotBillboards > 0 then
+                -- Best-effort: server should interpret E near plot upgrade parts.
+                BuyNext()
+            else
+                BuyNext()
+            end
+        end
     end)
 
     if plotPurchEv then
@@ -549,6 +1180,76 @@ task.spawn(function()
         end)
     end
 
+    -- ============================================================
+    -- v0.30 UPGRADE EVENTS + UI UPDATES
+    -- ============================================================
+    if plotUpgEv then
+        plotUpgEv.OnClientEvent:Connect(function(plotId, newBuildingName, dpsBonus)
+            plotState.plotId = plotId or plotState.plotId
+            if newBuildingName ~= nil then plotState.buildingName = newBuildingName end
+            if dpsBonus ~= nil then plotState.dpsBonus = dpsBonus end
+            plotInfoFrame.Visible = true
+            UpdatePlotInfoUI()
+            Notify("📦 Plot upgraded!", C.GREEN)
+            TryAttachPlotBillboards()
+        end)
+    end
+
+    if decorChangedEv then
+        decorChangedEv.OnClientEvent:Connect(function(plotId, slotIndex, decorName)
+            plotState.plotId = plotId or plotState.plotId
+            local idx = tonumber(slotIndex)
+            if idx and idx >= 1 and idx <= 3 then
+                plotState.decorations[idx] = tostring(decorName or "Empty")
+            end
+            plotInfoFrame.Visible = true
+            UpdatePlotInfoUI()
+            Notify("🖼️ Decoration updated!", C.BLUE)
+            TryAttachPlotBillboards()
+        end)
+    end
+
+    if playerUpgEv then
+        playerUpgEv.OnClientEvent:Connect(function(upgName, level, effect, payload)
+            local nm = tostring(upgName or "Upgrade")
+            local lv = tonumber(level) or 0
+            local ef = effect ~= nil and tostring(effect) or ""
+            Notify("⬆️ " .. nm .. " Level " .. tostring(lv) .. ((ef ~= "") and (" (" .. ef .. ")") or "") .. "!", C.GREEN)
+            lastPlayerUpgrade[nm] = lv
+
+            -- Apply visuals if included
+            if type(payload) == "table" then
+                if payload.orbMagnetismLevel then
+                    local r = 12 + (tonumber(payload.orbMagnetismLevel) or 0) * 3
+                    EnsureOrbRing(player.Character, (tonumber(payload.orbMagnetismLevel) or 0) > 0 and r or 0)
+                end
+                if payload.fun then
+                    ApplyFunUpgrades(player.Character, payload.fun)
+                end
+                if payload.title then
+                    SetTitle(payload.title)
+                end
+            end
+        end)
+    end
+
+    -- Re-try billboards once player data is ready
+    if dataReadyEv then
+        dataReadyEv.OnClientEvent:Connect(function()
+            task.delay(0.25, function()
+                TryAttachPlotBillboards()
+            end)
+        end)
+    end
+
+    -- Shop currency refresh (every 2s)
+    task.spawn(function()
+        while gui and gui.Parent do
+            task.wait(2)
+            SetCurrentData(currentData)
+        end
+    end)
+
     -- Stats panel
     local function RefreshStats()
         if not getDataFn then return end
@@ -635,11 +1336,23 @@ task.spawn(function()
         end)
     end
 
-    shopBtn.MouseButton1Click:Connect(function()
+    local function ToggleShopUI()
         panel.Visible = false
-        shopPanel.Visible = not shopPanel.Visible
-    end)
+        -- Prefer new v0.30 shopFrame, keep legacy shopPanel for older servers
+        shopFrame.Visible = not shopFrame.Visible
+        shopPanel.Visible = false
+    end
+
+    shopBtn.MouseButton1Click:Connect(ToggleShopUI)
     shopCloseBtn.MouseButton1Click:Connect(function() shopPanel.Visible = false end)
+    shopClose.MouseButton1Click:Connect(function() shopFrame.Visible = false end)
+
+    UserInputService.InputBegan:Connect(function(inp, gp)
+        if gp then return end
+        if inp.KeyCode == Enum.KeyCode.F then
+            ToggleShopUI()
+        end
+    end)
 
     -- ============================================================
     -- ORB COLLECTION
