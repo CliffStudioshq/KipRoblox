@@ -12,7 +12,7 @@ local DataStoreService   = game:GetService("DataStoreService")
 
 -- Bridge builder lives in WorldBuilder.server.lua (global functions)
 
-local DATASTORE_VERSION = 5
+local DATASTORE_VERSION = 6
 
 print(("="):rep(50))
 print("DataTycoon v0.23 — Server starting...")
@@ -70,19 +70,18 @@ end
 
 local ClaimDailyReward  = MakeEvent("ClaimDailyReward")
 local CollectOrb        = MakeEvent("CollectOrb")
-local PurchasePlot      = MakeEvent("PurchasePlot")
-local SellPlot          = MakeEvent("SellPlot")
-local PlaceComputer     = MakeEvent("PlaceComputer")
-local UpgradeHouse      = MakeEvent("UpgradeHouse")
+local PurchasePlotBuilding   = MakeEvent("PurchasePlotBuilding")
+local PurchaseDecoration     = MakeEvent("PurchaseDecoration")
+local PurchasePlayerUpgrade  = MakeEvent("PurchasePlayerUpgrade")
+local PurchaseFunUpgrade     = MakeEvent("PurchaseFunUpgrade")
 local DailyRewardClaimed = MakeEvent("DailyRewardClaimed")
 local Notification      = MakeEvent("Notification")
 local DataUpdated       = MakeEvent("DataUpdated")
-local PlotPurchased     = MakeEvent("PlotPurchased")
-local PlotSold          = MakeEvent("PlotSold")
+local PlotUpgraded      = MakeEvent("PlotUpgraded")
+local DecorationChanged = MakeEvent("DecorationChanged")
+local PlayerUpgraded    = MakeEvent("PlayerUpgraded")
 local BridgeBuilt       = MakeEvent("BridgeBuilt")
 local BridgeRemoved     = MakeEvent("BridgeRemoved")
-local ComputerPlaced    = MakeEvent("ComputerPlaced")
-local HouseUpgraded     = MakeEvent("HouseUpgraded")
 local OrbCollected      = MakeEvent("OrbCollected")   -- fires orb position back so client can animate
 local OrbStateChanged   = MakeEvent("OrbStateChanged") -- server authoritative orb availability
 local GetPlayerData     = MakeEvent("GetPlayerData", "RemoteFunction")
@@ -96,24 +95,9 @@ print("[OK] RemoteEvents replicated")
 -- CONFIG
 -- ============================================================
 local CONFIG = {
-    STARTING_DATA  = 50,
-    ORB_REWARD     = 5,
-    PASSIVE_INCOME = 1,
-
-    COMPUTER_TIERS = {
-        {name = "Budget Rig",    cost = 100,   dps = 2},
-        {name = "Gaming PC",     cost = 500,   dps = 8},
-        {name = "Server Rack",   cost = 2500,  dps = 30},
-        {name = "Supercomputer", cost = 10000, dps = 120},
-    },
-
-    HOUSE_TIERS = {
-        {name = "Shack",         cost = 0,     maxComputers = 1,  maxPlots = 2},
-        {name = "Small House",   cost = 300,   maxComputers = 2,  maxPlots = 4},
-        {name = "Modern House",  cost = 1500,  maxComputers = 4,  maxPlots = 8},
-        {name = "Tech Villa",    cost = 8000,  maxComputers = 8,  maxPlots = 8},
-        {name = "Mega Compound", cost = 30000, maxComputers = 16, maxPlots = 8},
-    },
+    STARTING_DATA  = 10,
+    ORB_REWARD     = 2,
+    PASSIVE_INCOME = 0.5,
 
     DAILY_REWARDS  = {50, 75, 100, 150, 200, 300, 500},
     ORB_RESPAWN    = 30,  -- seconds before orb visually respawns on client
@@ -179,16 +163,38 @@ local OFFLINE_INCOME_MIN_TIME = 60      -- minimum seconds offline to qualify
 local OFFLINE_INCOME_COOLDOWN  = 300     -- 5 minutes between awards
 
 local DEFAULT_DATA = {
-    Data = CONFIG.STARTING_DATA,
-    TotalEarned = CONFIG.STARTING_DATA,
-    TotalSpent  = 0,
-    Plots       = {},
-    Computers   = {},
-    HouseTier   = 1,
+    Data = 10,
+    TotalEarned = 10,
+    TotalSpent = 0,
+
+    -- Plot (single)
+    Plot = {
+        tier = 1,
+        decorations = {},
+        gridX = 0,
+        gridZ = 0,
+    },
+
+    -- Player upgrades (levels)
+    Upgrades = {
+        dataMiningSpeed = 0,
+        orbMagnetism = 0,
+        orbValue = 0,
+        idleMining = 0,
+        walkSpeed = 0,
+        sprintPower = 0,
+        jumpBoost = 0,
+    },
+
+    -- Fun upgrades
+    FunUpgrades = {},
+    Title = "",
+    Pet = "",
+
     DailyStreak = 0,
     LastDailyReward = 0,
     BlocksCollected = 0,
-    LastSeen    = 0,
+    LastSeen = 0,
 }
 
 local function defaultData()
@@ -197,6 +203,147 @@ local function defaultData()
         d[k] = type(v) == "table" and {} or v
     end
     return d
+end
+
+-- ============================================================
+-- v0.30 — Single plot + upgrades
+-- ============================================================
+local PLOT_GRID_SPACING = 170
+
+local PLOT_BUILDINGS = {
+    {tier = 1, name = "Empty Plot",       cost = 0,      dpsBonus = 0},
+    {tier = 2, name = "Data Outpost",     cost = 500,    dpsBonus = 5},
+    {tier = 3, name = "Server Room",      cost = 2000,   dpsBonus = 15},
+    {tier = 4, name = "Data Center",      cost = 8000,   dpsBonus = 50},
+    {tier = 5, name = "Tech Campus",      cost = 25000,  dpsBonus = 150},
+    {tier = 6, name = "Quantum Labs",     cost = 75000,  dpsBonus = 400},
+    {tier = 7, name = "Neural Nexus",     cost = 200000, dpsBonus = 1000},
+    {tier = 8, name = "Singularity Core", cost = 500000, dpsBonus = 3000},
+}
+
+local PLOT_DECORATIONS = {
+    {name = "Flower Garden",      cost = 200,    dpsBonus = 1},
+    {name = "Fountain",           cost = 800,    dpsBonus = 3},
+    {name = "Neon Sign",          cost = 1500,   dpsBonus = 5},
+    {name = "Hologram Tree",      cost = 3000,   dpsBonus = 10},
+    {name = "Dragon Statue",      cost = 8000,   dpsBonus = 25},
+    {name = "Particle Fountain",  cost = 15000,  dpsBonus = 50},
+    {name = "Mining Drones",      cost = 30000,  dpsBonus = 100},
+    {name = "Satellite Dish",     cost = 50000,  dpsBonus = 200},
+}
+
+local PLAYER_UPGRADES = {
+    dataMiningSpeed = {baseCost = 500,  maxLevel = 20, scaling = 1.5, baseEffect = 2},
+    orbMagnetism    = {baseCost = 1000, maxLevel = 10, scaling = 1.8, baseEffect = 3},
+    orbValue        = {baseCost = 2000, maxLevel = 10, scaling = 2.0, baseEffect = 1},
+    idleMining      = {baseCost = 5000, maxLevel = 5,  scaling = 2.5, baseEffect = 0.5},
+    walkSpeed       = {baseCost = 300,  maxLevel = 10, scaling = 1.6, baseEffect = 2},
+    sprintPower     = {baseCost = 2000, maxLevel = 5,  scaling = 2.0, baseEffect = 10},
+    jumpBoost       = {baseCost = 1500, maxLevel = 5,  scaling = 2.0, baseEffect = 5},
+}
+
+local FUN_UPGRADES = {
+    particleTrail = {cost = 5000,   name = "Particle Trail"},
+    musicPack     = {cost = 3000,   name = "Music Pack"},
+    titleMiner    = {cost = 10000,  name = "Title: Data Miner"},
+    titleBaron    = {cost = 50000,  name = "Title: Data Baron"},
+    titleTycoon   = {cost = 200000, name = "Title: Data Tycoon"},
+    auraEffect    = {cost = 25000,  name = "Aura Effect"},
+    fireTrail     = {cost = 100000, name = "Fire Trail"},
+    rainbowMode   = {cost = 500000, name = "Rainbow Mode"},
+    petOrb        = {cost = 75000,  name = "Pet: Data Orb"},
+    petRobot      = {cost = 150000, name = "Pet: Robot Dog"},
+}
+
+local function GetUpgradeCost(upgradeKey, currentLevel)
+    local upg = PLAYER_UPGRADES[upgradeKey]
+    if not upg then return math.huge end
+    return math.floor(upg.baseCost * (upg.scaling ^ currentLevel))
+end
+
+local PlayerPlot = {}      -- [userId] = Plot table
+local PlayerUpgrades = {}  -- [userId] = Upgrades table
+
+local function GetDecorationByName(name)
+    for _, dec in ipairs(PLOT_DECORATIONS) do
+        if dec.name == name then return dec end
+    end
+    return nil
+end
+
+local function ApplyPlayerStats(player)
+    local data = PlayerData[player.UserId]
+    if not data then return end
+    local character = player.Character
+    if not character then return end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid then return end
+
+    local upgrades = data.Upgrades or {}
+    local baseSpeed = 16
+    humanoid.WalkSpeed = baseSpeed + (upgrades.walkSpeed or 0) * (PLAYER_UPGRADES.walkSpeed.baseEffect)
+
+    local baseJump = 50
+    humanoid.JumpPower = baseJump + (upgrades.jumpBoost or 0) * (PLAYER_UPGRADES.jumpBoost.baseEffect)
+end
+
+local function SpiralCoord(n)
+    if n == 0 then return 0, 0 end
+    local ring = math.ceil((math.sqrt(n + 1) - 1) / 2)
+    local sideLen = ring * 2
+    local maxVal = (2 * ring + 1) ^ 2 - 1
+    local d = maxVal - n
+    local side = math.floor(d / sideLen)
+    local pos = d % sideLen
+
+    if side == 0 then
+        return ring - pos, -ring
+    elseif side == 1 then
+        return -ring, -ring + pos
+    elseif side == 2 then
+        return -ring + pos, ring
+    else
+        return ring, ring - pos
+    end
+end
+
+local function AssignPlot(player)
+    local data = PlayerData[player.UserId]
+    if not data then return end
+    data.Plot = data.Plot or {tier = 1, decorations = {}, gridX = 0, gridZ = 0}
+
+    if data._plotAssigned == true then
+        data.Plot.plotCenter = Vector3.new((data.Plot.gridX or 0) * PLOT_GRID_SPACING, 0.5, (data.Plot.gridZ or 0) * PLOT_GRID_SPACING)
+        PlayerPlot[player.UserId] = data.Plot
+        return
+    end
+
+    local used = {}
+    for _, pd in pairs(PlayerData) do
+        if pd and pd._plotAssigned == true and pd.Plot then
+            used[tostring(pd.Plot.gridX) .. "," .. tostring(pd.Plot.gridZ)] = true
+        end
+    end
+
+    local idx = 0
+    while true do
+        local gx, gz = SpiralCoord(idx)
+        local key = tostring(gx) .. "," .. tostring(gz)
+        if not used[key] then
+            data.Plot.gridX = gx
+            data.Plot.gridZ = gz
+            data.Plot.plotCenter = Vector3.new(gx * PLOT_GRID_SPACING, 0.5, gz * PLOT_GRID_SPACING)
+            data._plotAssigned = true
+            PlayerPlot[player.UserId] = data.Plot
+            print(string.format("[PLOT] Assigned %s to grid (%d,%d)", player.Name, gx, gz))
+            break
+        end
+        idx += 1
+        if idx > 20000 then
+            warn("[PLOT] Failed to assign plot for " .. player.Name)
+            break
+        end
+    end
 end
 
 local function dsGet(key)
@@ -222,28 +369,7 @@ end
 -- ============================================================
 -- PLOTS
 -- ============================================================
-local Plots = {}
-
-local function InitPlots()
-    local coords = {{-3,-3},{-3,3},{3,-3},{3,3},{0,-3},{0,3},{-3,0},{3,0}}
-    for _, c in ipairs(coords) do
-        local x, z  = c[1], c[2]
-        local plotId = "plot_"..x.."_"..z
-        Plots[plotId] = {
-            id        = plotId,
-            owner     = nil,
-            ownerName = nil,
-            x = x, z = z,
-            dist      = math.max(math.abs(x), math.abs(z)),
-            -- price is computed dynamically at purchase-time based on purchase index
-            price     = 0,
-            center    = Vector3.new(x*170, 0.5, z*170),
-            computers = {},
-        }
-    end
-    local n=0; for _ in pairs(Plots) do n=n+1 end
-    print("[OK] "..n.." plots initialized")
-end
+-- (v0.30) Plots are per-player and assigned on a grid; no shared plot pool.
 
 -- ============================================================
 -- LOAD / SAVE
@@ -294,13 +420,35 @@ local function LoadPlayerData(player)
                 v = 5
             end
 
+            if v < 6 then
+                -- Migrate from old plot system to new
+                saved.Plot = saved.Plot or {tier = 1, decorations = {}, gridX = 0, gridZ = 0}
+                saved.Upgrades = saved.Upgrades or {dataMiningSpeed=0, orbMagnetism=0, orbValue=0, idleMining=0, walkSpeed=0, sprintPower=0, jumpBoost=0}
+                saved.FunUpgrades = saved.FunUpgrades or {}
+                saved.Title = saved.Title or ""
+                saved.Pet = saved.Pet or ""
+                -- Remove old fields
+                saved.Plots = nil
+                saved.Computers = nil
+                saved.HouseTier = nil
+                v = 6
+            end
+
             saved._dataVersion = DATASTORE_VERSION
             print("[DATA] Migrated "..player.Name.." from v"..tostring(oldVersion).." to v"..tostring(DATASTORE_VERSION))
         end
 
-        -- Ensure any new default fields exist
+        -- Ensure any new default fields exist (deep for tables)
         for k, v in pairs(DEFAULT_DATA) do
-            if saved[k] == nil then saved[k] = type(v)=="table" and {} or v end
+            if saved[k] == nil then
+                saved[k] = type(v)=="table" and {} or v
+            elseif type(v) == "table" and type(saved[k]) == "table" then
+                for kk, vv in pairs(v) do
+                    if saved[k][kk] == nil then
+                        saved[k][kk] = type(vv) == "table" and {} or vv
+                    end
+                end
+            end
         end
         data = saved
         print("[DATA] Loaded "..player.Name.." Data="..data.Data)
@@ -321,10 +469,25 @@ local function LoadPlayerData(player)
             if lastAward and (now - lastAward) < OFFLINE_INCOME_COOLDOWN then
                 print(string.format("[DATA] Offline bonus skipped for %s: cooldown %ds remaining", player.Name, OFFLINE_INCOME_COOLDOWN - (now - lastAward)))
             else
-                local offDPS  = CONFIG.PASSIVE_INCOME
-                for _, comp in ipairs(data.Computers or {}) do
-                    local ct = CONFIG.COMPUTER_TIERS[comp.tier]
-                    if ct then offDPS = offDPS + ct.dps end
+                local offDPS = CONFIG.PASSIVE_INCOME
+
+                -- Plot building DPS
+                local plot = data.Plot
+                if plot then
+                    local building = PLOT_BUILDINGS[plot.tier or 1]
+                    if building then offDPS = offDPS + (building.dpsBonus or 0) end
+
+                    -- Decoration DPS
+                    for _, decName in ipairs(plot.decorations or {}) do
+                        local dec = GetDecorationByName(decName)
+                        if dec then offDPS = offDPS + (dec.dpsBonus or 0) end
+                    end
+                end
+
+                -- Player upgrade DPS
+                local upgrades = data.Upgrades
+                if upgrades then
+                    offDPS = offDPS + (upgrades.dataMiningSpeed or 0) * (PLAYER_UPGRADES.dataMiningSpeed.baseEffect)
                 end
 
                 local bonus = math.floor(elapsed * offDPS * 0.5)
@@ -348,6 +511,10 @@ local function LoadPlayerData(player)
     data.LastSeen = now
     PlayerData[player.UserId] = data
 
+    -- Assign single plot + cache upgrades
+    AssignPlot(player)
+    PlayerUpgrades[player.UserId] = data.Upgrades
+
     -- Build leaderstats — ALL children added before parenting (atomic replication)
     local ls = Instance.new("Folder")
     ls.Name = "leaderstats"
@@ -355,14 +522,16 @@ local function LoadPlayerData(player)
     local dv = Instance.new("IntValue")
     dv.Name = "Data"; dv.Value = data.Data; dv.Parent = ls
 
-    local hv = Instance.new("IntValue")
-    hv.Name = "House"; hv.Value = data.HouseTier; hv.Parent = ls
-
     ls.Parent = player   -- atomic: client gets complete folder in one replication
     print("[OK] leaderstats created for "..player.Name)
 
     -- Signal client that GetPlayerData is now safe to call
     PlayerDataReady:FireClient(player)
+
+    -- Apply movement upgrades
+    task.defer(function()
+        ApplyPlayerStats(player)
+    end)
 end
 
 local function SavePlayerData(player)
@@ -393,24 +562,7 @@ local function Notify(player, msg, t)
     Notification:FireClient(player, msg, t or "info")
 end
 
-local function FindNearestPlot(player)
-    local character = player.Character
-    if not character then return nil end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return nil end
-
-    local nearest, nearestDist = nil, math.huge
-    for _, plot in pairs(Plots) do
-        if not plot.owner then
-            local dist = (hrp.Position - plot.center).Magnitude
-            if dist < nearestDist and dist < 80 then
-                nearest = plot
-                nearestDist = dist
-            end
-        end
-    end
-    return nearest
-end
+-- (v0.30) No shared plot pool to search.
 
 -- ============================================================
 -- EVENT HANDLERS
@@ -501,8 +653,10 @@ CollectOrb.OnServerEvent:Connect(function(player, orbId)
     print("[ORB] " .. player.Name .. " collected " .. orbId)
 
     local data = PlayerData[player.UserId]; if not data then return end
-    data.Data = data.Data + CONFIG.ORB_REWARD
-    data.TotalEarned = data.TotalEarned + CONFIG.ORB_REWARD
+    local upgrades = data.Upgrades or {}
+    local orbReward = CONFIG.ORB_REWARD + (upgrades.orbValue or 0) * (PLAYER_UPGRADES.orbValue.baseEffect)
+    data.Data = data.Data + orbReward
+    data.TotalEarned = data.TotalEarned + orbReward
     data.BlocksCollected = (data.BlocksCollected or 0) + 1
     UpdateData(player)
 
@@ -519,127 +673,157 @@ CollectOrb.OnServerEvent:Connect(function(player, orbId)
     end)
 end)
 
-PurchasePlot.OnServerEvent:Connect(function(player, plotId)
-    local plot = nil
-    if type(plotId) == "string" then
-        plot = Plots[plotId]
-        if not plot then
-            LogInvalidCall(player, "PurchasePlot")
-            Notify(player, "Plot not found!", "error")
-            return
-        end
-    else
-        plot = FindNearestPlot(player)
-        if not plot then
-            LogInvalidCall(player, "PurchasePlot")
-            Notify(player, "Stand near an unowned plot!", "error")
-            return
-        end
-        plotId = plot.id
-    end
-    if plot.owner then Notify(player, "Plot is owned!", "error"); return end
+PurchasePlotBuilding.OnServerEvent:Connect(function(player, payload)
     local data = PlayerData[player.UserId]; if not data then return end
-    local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if safeLen(data.Plots) >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error"); return end
+    local plot = data.Plot; if not plot then return end
 
-    local plotPrice = math.floor(100 * (1.5 ^ #data.Plots))
-    if data.Data < plotPrice then Notify(player, "Need "..plotPrice.." Data!", "error"); return end
-
-    -- cache last paid price for refund math (SellPlot refunds 50%)
-    plot.price = plotPrice
-    data.Data = data.Data - plotPrice
-    data.TotalSpent = data.TotalSpent + plotPrice
-    plot.owner = player.UserId; plot.ownerName = player.Name
-    table.insert(data.Plots, plotId)
-    UpdateData(player)
-    PlotPurchased:FireAllClients(plotId, player.UserId, player.Name)
-    if typeof(BuildBridge) == "function" then
-        BuildBridge(plotId, player.Name, player.UserId)
-    else
-        warn("[BRIDGE] BuildBridge function missing (WorldBuilder not loaded?)")
+    if type(payload) ~= "table" then
+        LogInvalidCall(player, "PurchasePlotBuilding")
+        return
     end
-    BridgeBuilt:FireAllClients(plotId, player.Name, player.UserId)
-    Notify(player, "Plot purchased for "..plotPrice.." Data!", "success")
-    print("[GAME] "..player.Name.." bought "..plotId)
+
+    local gx = tonumber(payload.plotX)
+    local gz = tonumber(payload.plotZ)
+    if gx == nil or gz == nil or gx ~= plot.gridX or gz ~= plot.gridZ then
+        LogInvalidCall(player, "PurchasePlotBuilding")
+        Notify(player, "Invalid plot.", "error")
+        return
+    end
+
+    local nextTier = (plot.tier or 1) + 1
+    if nextTier > #PLOT_BUILDINGS then
+        Notify(player, "Already max building tier!", "error")
+        return
+    end
+    local nextBuilding = PLOT_BUILDINGS[nextTier]
+    if not nextBuilding then return end
+    local cost = nextBuilding.cost or 0
+    if data.Data < cost then
+        Notify(player, "Need " .. cost .. " Data!", "error")
+        return
+    end
+
+    data.Data -= cost
+    data.TotalSpent = (data.TotalSpent or 0) + cost
+    plot.tier = nextTier
+    UpdateData(player)
+
+    PlotUpgraded:FireClient(player, {plotX = gx, plotZ = gz, newTier = nextTier, buildingName = nextBuilding.name, dpsBonus = nextBuilding.dpsBonus})
+    Notify(player, "Upgraded plot to " .. nextBuilding.name .. "!", "success")
+    print(string.format("[PLOT] %s upgraded building to tier %d (%s)", player.Name, nextTier, tostring(nextBuilding.name)))
 end)
 
-SellPlot.OnServerEvent:Connect(function(player, plotId)
-    if type(plotId) ~= "string" then
-        LogInvalidCall(player, "SellPlot")
-        return
-    end
-    local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then
-        LogInvalidCall(player, "SellPlot")
-        Notify(player, "Not your plot!", "error")
-        return
-    end
+PurchaseDecoration.OnServerEvent:Connect(function(player, payload)
     local data = PlayerData[player.UserId]; if not data then return end
+    local plot = data.Plot; if not plot then return end
 
-    if typeof(RemoveBridge) == "function" then
-        RemoveBridge(plotId)
-    else
-        warn("[BRIDGE] RemoveBridge function missing (WorldBuilder not loaded?)")
+    if type(payload) ~= "table" then
+        LogInvalidCall(player, "PurchaseDecoration")
+        return
     end
-    BridgeRemoved:FireAllClients(plotId)
+    local gx = tonumber(payload.plotX)
+    local gz = tonumber(payload.plotZ)
+    local slotIndex = tonumber(payload.slotIndex)
+    local decorationName = payload.decorationName
 
-    local sp = math.floor(plot.price * 0.5)
-    data.Data = data.Data + sp; data.TotalEarned = data.TotalEarned + sp
-    plot.owner = nil; plot.ownerName = nil
-    for i=#data.Plots,1,-1 do if data.Plots[i]==plotId then table.remove(data.Plots,i); break end end
-    for i=#data.Computers,1,-1 do if data.Computers[i].plotId==plotId then table.remove(data.Computers,i) end end
-    plot.computers = {}
+    if gx == nil or gz == nil or gx ~= plot.gridX or gz ~= plot.gridZ then
+        LogInvalidCall(player, "PurchaseDecoration")
+        Notify(player, "Invalid plot.", "error")
+        return
+    end
+    slotIndex = math.clamp(math.floor(slotIndex or 0), 1, 3)
+    if type(decorationName) ~= "string" then
+        LogInvalidCall(player, "PurchaseDecoration")
+        return
+    end
+    local dec = GetDecorationByName(decorationName)
+    if not dec then
+        Notify(player, "Decoration not found!", "error")
+        return
+    end
+    local cost = dec.cost or 0
+    if data.Data < cost then
+        Notify(player, "Need " .. cost .. " Data!", "error")
+        return
+    end
+
+    plot.decorations = plot.decorations or {}
+    plot.decorations[slotIndex] = decorationName
+    data.Data -= cost
+    data.TotalSpent = (data.TotalSpent or 0) + cost
     UpdateData(player)
-    PlotSold:FireAllClients(plotId)
-    Notify(player, "Sold for "..sp.." Data!", "success")
+
+    DecorationChanged:FireClient(player, {plotX = gx, plotZ = gz, slot = slotIndex, name = decorationName, dpsBonus = dec.dpsBonus})
+    Notify(player, "Placed " .. decorationName .. "!", "success")
+    print(string.format("[PLOT] %s changed decoration slot %d -> %s", player.Name, slotIndex, decorationName))
 end)
 
-PlaceComputer.OnServerEvent:Connect(function(player, plotId, tier)
-    if type(plotId) ~= "string" then
-        LogInvalidCall(player, "PlaceComputer")
-        return
-    end
-    local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then
-        LogInvalidCall(player, "PlaceComputer")
-        Notify(player, "Not your plot!", "error")
-        return
-    end
+PurchasePlayerUpgrade.OnServerEvent:Connect(function(player, upgradeKey)
     local data = PlayerData[player.UserId]; if not data then return end
-    if tonumber(tier) == nil then
-        LogInvalidCall(player, "PlaceComputer")
+    if type(upgradeKey) ~= "string" then
+        LogInvalidCall(player, "PurchasePlayerUpgrade")
+        return
     end
-    tier = math.clamp(math.floor(tonumber(tier) or 1), 1, #CONFIG.COMPUTER_TIERS)
-    local ct = CONFIG.COMPUTER_TIERS[tier]
-    local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
-    if safeLen(data.Computers) >= ht.maxComputers then Notify(player, "Upgrade house first!", "error"); return end
-    if data.Data < ct.cost then Notify(player, "Need "..ct.cost.." Data!", "error"); return end
-    data.Data = data.Data - ct.cost; data.TotalSpent = data.TotalSpent + ct.cost
-    local comp = {tier=tier, plotId=plotId, name=ct.name, dps=ct.dps}
-    table.insert(data.Computers, comp); table.insert(plot.computers, comp)
+    local def = PLAYER_UPGRADES[upgradeKey]
+    if not def then
+        Notify(player, "Upgrade not found!", "error")
+        return
+    end
+
+    data.Upgrades = data.Upgrades or {}
+    local current = tonumber(data.Upgrades[upgradeKey] or 0) or 0
+    if current >= (def.maxLevel or 0) then
+        Notify(player, "Already max level!", "error")
+        return
+    end
+    local cost = GetUpgradeCost(upgradeKey, current)
+    if data.Data < cost then
+        Notify(player, "Need " .. cost .. " Data!", "error")
+        return
+    end
+
+    data.Data -= cost
+    data.TotalSpent = (data.TotalSpent or 0) + cost
+    local newLevel = current + 1
+    data.Upgrades[upgradeKey] = newLevel
+    PlayerUpgrades[player.UserId] = data.Upgrades
     UpdateData(player)
-    ComputerPlaced:FireClient(player, plotId, tier, ct.name, ct.dps)
-    Notify(player, ct.name.." placed! (+"..ct.dps.."/s)", "success")
-    print("[GAME] "..player.Name.." placed "..ct.name)
+    ApplyPlayerStats(player)
+
+    local effect = (def.baseEffect or 0) * newLevel
+    PlayerUpgraded:FireClient(player, {upgradeKey = upgradeKey, newLevel = newLevel, effect = effect, cost = cost})
+    Notify(player, "Upgraded " .. upgradeKey .. " to Lv." .. newLevel .. "!", "success")
+    print(string.format("[UPG] %s upgraded %s -> %d (cost %d)", player.Name, upgradeKey, newLevel, cost))
 end)
 
-UpgradeHouse.OnServerEvent:Connect(function(player)
+PurchaseFunUpgrade.OnServerEvent:Connect(function(player, upgradeKey)
     local data = PlayerData[player.UserId]; if not data then return end
-    local nt = data.HouseTier + 1
-    if nt > #CONFIG.HOUSE_TIERS then
-        LogInvalidCall(player, "UpgradeHouse")
-        Notify(player, "Already max!", "error")
+    if type(upgradeKey) ~= "string" then
+        LogInvalidCall(player, "PurchaseFunUpgrade")
         return
     end
-    local cost = CONFIG.HOUSE_TIERS[nt].cost
-    if data.Data < cost then Notify(player, "Need "..cost.." Data!", "error"); return end
-    data.Data = data.Data - cost; data.TotalSpent = data.TotalSpent + cost
-    data.HouseTier = nt
-    local ls = player:FindFirstChild("leaderstats")
-    if ls then local hv=ls:FindFirstChild("House"); if hv then hv.Value=nt end end
+    local def = FUN_UPGRADES[upgradeKey]
+    if not def then
+        Notify(player, "Fun upgrade not found!", "error")
+        return
+    end
+    data.FunUpgrades = data.FunUpgrades or {}
+    if data.FunUpgrades[upgradeKey] then
+        Notify(player, "Already owned!", "error")
+        return
+    end
+    local cost = def.cost or 0
+    if data.Data < cost then
+        Notify(player, "Need " .. cost .. " Data!", "error")
+        return
+    end
+    data.Data -= cost
+    data.TotalSpent = (data.TotalSpent or 0) + cost
+    data.FunUpgrades[upgradeKey] = true
     UpdateData(player)
-    HouseUpgraded:FireClient(player, nt, CONFIG.HOUSE_TIERS[nt].name)
-    Notify(player, "Upgraded to "..CONFIG.HOUSE_TIERS[nt].name.."! 🏠", "success")
+
+    Notify(player, "Purchased: " .. (def.name or upgradeKey), "success")
+    print(string.format("[FUN] %s purchased %s (cost %d)", player.Name, upgradeKey, cost))
 end)
 
 GetPlayerData.OnServerInvoke = function(player)
@@ -650,14 +834,16 @@ GetPlayerData.OnServerInvoke = function(player)
     return {
         ok = true,
         data = {
-            Data = data.Data,
-            TotalEarned = data.TotalEarned,
-            TotalSpent = data.TotalSpent,
-            HouseTier = data.HouseTier,
-            Plots = data.Plots,
-            Computers = data.Computers,
-            DailyStreak = data.DailyStreak,
-            BlocksCollected = data.BlocksCollected,
+        	Data = data.Data,
+        	TotalEarned = data.TotalEarned,
+        	TotalSpent = data.TotalSpent,
+        	Plot = data.Plot,
+        	Upgrades = data.Upgrades,
+        	FunUpgrades = data.FunUpgrades,
+        	Title = data.Title,
+        	Pet = data.Pet,
+        	DailyStreak = data.DailyStreak,
+        	BlocksCollected = data.BlocksCollected,
         }
     }
 end
@@ -674,13 +860,28 @@ task.spawn(function()
         for _, p in ipairs(Players:GetPlayers()) do
             local data = PlayerData[p.UserId]
             if data then
-                local dps = CONFIG.PASSIVE_INCOME
-                for _, comp in ipairs(data.Computers or {}) do
-                    local ct = CONFIG.COMPUTER_TIERS[comp.tier]
-                    if ct then dps = dps + ct.dps end
+                local totalDPS = CONFIG.PASSIVE_INCOME
+
+                -- Add plot building DPS
+                local plot = PlayerPlot[p.UserId]
+                if plot then
+                    local building = PLOT_BUILDINGS[plot.tier or 1]
+                    if building then totalDPS = totalDPS + (building.dpsBonus or 0) end
+                    -- Add decoration DPS
+                    for _, decName in ipairs(plot.decorations or {}) do
+                        local dec = GetDecorationByName(decName)
+                        if dec then totalDPS = totalDPS + (dec.dpsBonus or 0) end
+                    end
                 end
-                data.Data        = data.Data + dps
-                data.TotalEarned = data.TotalEarned + dps
+
+                -- Add player upgrade DPS
+                local upgrades = PlayerUpgrades[p.UserId]
+                if upgrades then
+                    totalDPS = totalDPS + (upgrades.dataMiningSpeed or 0) * (PLAYER_UPGRADES.dataMiningSpeed.baseEffect)
+                end
+
+                data.Data        = data.Data + totalDPS
+                data.TotalEarned = data.TotalEarned + totalDPS
                 UpdateData(p)
             end
         end
@@ -729,7 +930,7 @@ game:BindToClose(function()
     print("[DATA] All saved.")
 end)
 
-InitPlots()
+-- (v0.30) No global plot initialization
 print(("="):rep(50))
 print("DataTycoon v0.23 — SERVER READY")
 print(("="):rep(50))
