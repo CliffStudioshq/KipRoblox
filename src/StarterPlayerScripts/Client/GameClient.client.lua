@@ -69,13 +69,10 @@ local C = {
     BORDER = Color3.fromRGB(42,  42,  68),
 }
 
-local HOUSE_NAMES  = {"Shack","Small House","Modern House","Tech Villa","Mega Compound"}
-local HOUSE_COSTS  = {0, 300, 1500, 8000, 30000}
-local COMP_TIERS   = {
-    {name="Budget Rig",    cost=100,   dps=2},
-    {name="Gaming PC",     cost=500,   dps=8},
-    {name="Server Rack",   cost=2500,  dps=30},
-    {name="Supercomputer", cost=10000, dps=120},
+-- v0.30: Plot upgrade tiers (client-side display)
+local PLOT_BUILDING_NAMES = {
+    "Empty Plot", "Data Outpost", "Server Room", "Data Center",
+    "Tech Campus", "Quantum Labs", "Neural Nexus", "Singularity Core"
 }
 
 -- ============================================================
@@ -109,11 +106,11 @@ dataLabel.TextXAlignment = Enum.TextXAlignment.Left; dataLabel.Parent = dataBar
 local sep1 = Instance.new("Frame"); sep1.Size = UDim2.new(0,1,0,24)
 sep1.BackgroundColor3 = C.BORDER; sep1.BackgroundTransparency = 0.3; sep1.Parent = dataBar
 
-local houseLabel = Instance.new("TextLabel")
-houseLabel.Size = UDim2.new(0, 100, 1, 0); houseLabel.BackgroundTransparency = 1
-houseLabel.Text = "🏠 Shack"; houseLabel.TextColor3 = C.DIM
-houseLabel.TextSize = 14; houseLabel.Font = Enum.Font.GothamBold
-houseLabel.TextXAlignment = Enum.TextXAlignment.Left; houseLabel.Parent = dataBar
+local plotLabel = Instance.new("TextLabel")
+plotLabel.Size = UDim2.new(0, 100, 1, 0); plotLabel.BackgroundTransparency = 1
+plotLabel.Text = "📦 Empty Plot"; plotLabel.TextColor3 = C.DIM
+plotLabel.TextSize = 14; plotLabel.Font = Enum.Font.GothamBold
+plotLabel.TextXAlignment = Enum.TextXAlignment.Left; plotLabel.Parent = dataBar
 
 local sep2 = Instance.new("Frame"); sep2.Size = UDim2.new(0,1,0,24)
 sep2.BackgroundColor3 = C.BORDER; sep2.BackgroundTransparency = 0.3; sep2.Parent = dataBar
@@ -156,8 +153,7 @@ local function Btn(text, color)
 end
 
 local dailyBtn   = Btn("🎁  Daily Reward",   C.ORANGE)
-local shopBtn    = Btn("🛒  Shop",            C.BLUE)
-local buyPlotBtn = Btn("📦  Buy Plot  [E]",  C.GREEN)
+local shopBtn    = Btn("🏪  Upgrade Shop [F]", C.BLUE)
 local statsBtn   = Btn("📊  Stats",           Color3.fromRGB(50,50,75))
 
 -- ============================================================
@@ -794,65 +790,6 @@ local function ApplyFunUpgrades(char, upgrades)
     end
 end
 
--- ---- SHOP PANEL ----
-local shopPanel = Instance.new("Frame")
-shopPanel.Size = UDim2.new(0, 340, 0, 0)
-shopPanel.Position = UDim2.new(0, 190, 0, 72)
-shopPanel.BackgroundColor3 = C.BG; shopPanel.BackgroundTransparency = 0.04
-shopPanel.AutomaticSize = Enum.AutomaticSize.Y
-shopPanel.Visible = false; shopPanel.Parent = gui
-corner(shopPanel, 14); stroke(shopPanel, C.BORDER)
-
-local shopLayout = Instance.new("UIListLayout")
-shopLayout.Padding = UDim.new(0, 6); shopLayout.Parent = shopPanel
-local shopPad = Instance.new("UIPadding")
-shopPad.PaddingTop=UDim.new(0,10); shopPad.PaddingBottom=UDim.new(0,10)
-shopPad.PaddingLeft=UDim.new(0,10); shopPad.PaddingRight=UDim.new(0,10); shopPad.Parent=shopPanel
-
-local shopTitle = Instance.new("TextLabel")
-shopTitle.Size = UDim2.new(1,0,0,32); shopTitle.BackgroundTransparency = 1
-shopTitle.Text = "🛒  Shop"; shopTitle.TextColor3 = C.WHITE
-shopTitle.TextSize = 17; shopTitle.Font = Enum.Font.GothamBold
-shopTitle.TextXAlignment = Enum.TextXAlignment.Left; shopTitle.Parent = shopPanel
-
-local shopCloseBtn = Instance.new("TextButton")
-shopCloseBtn.Size = UDim2.new(1,0,0,30); shopCloseBtn.BackgroundColor3 = Color3.fromRGB(40,40,60)
-shopCloseBtn.Text = "✕  Close Shop"; shopCloseBtn.TextColor3 = C.DIM
-shopCloseBtn.TextSize = 12; shopCloseBtn.Font = Enum.Font.GothamBold
-shopCloseBtn.Parent = shopPanel; corner(shopCloseBtn, 7)
-
--- Section header helper
-local function ShopHeader(text)
-    local h = Instance.new("TextLabel")
-    h.Size = UDim2.new(1,0,0,22); h.BackgroundTransparency = 1
-    h.Text = text; h.TextColor3 = C.CYAN; h.TextSize = 12
-    h.Font = Enum.Font.GothamBold; h.TextXAlignment = Enum.TextXAlignment.Left
-    h.Parent = shopPanel
-end
-
--- Shop item button helper — returns the button so we can update its text
-local function ShopItem(icon, name, cost, detail, color, onBuy)
-    local row = Instance.new("Frame")
-    row.Size = UDim2.new(1,0,0,48); row.BackgroundColor3 = C.CARD
-    row.BackgroundTransparency = 0.3; row.Parent = shopPanel; corner(row, 8)
-
-    local left = Instance.new("TextLabel")
-    left.Size = UDim2.new(0.62,0,1,0); left.Position = UDim2.new(0,8,0,0)
-    left.BackgroundTransparency = 1; left.TextXAlignment = Enum.TextXAlignment.Left
-    left.Text = icon.." "..name.."\n"..detail
-    left.TextColor3 = C.WHITE; left.TextSize = 12; left.Font = Enum.Font.Gotham
-    left.TextWrapped = true; left.Parent = row
-
-    local buyB = Instance.new("TextButton")
-    buyB.Size = UDim2.new(0.34,0,0.7,0)
-    buyB.Position = UDim2.new(0.64,0,0.15,0)
-    buyB.BackgroundColor3 = color; buyB.Text = "💰 "..fmt(cost)
-    buyB.TextColor3 = Color3.new(1,1,1); buyB.TextSize = 12
-    buyB.Font = Enum.Font.GothamBold; buyB.Parent = row; corner(buyB, 6)
-    buyB.MouseButton1Click:Connect(onBuy)
-    return buyB
-end
-
 -- ---- STATS PANEL ----
 local panel = Instance.new("Frame")
 panel.Size = UDim2.new(0, 295, 0, 0)
@@ -944,13 +881,10 @@ task.spawn(function()
         print("[CLIENT] Data connected = "..tostring(dv.Value))
     end
 
+    -- v0.30: House leaderstat removed; plot info shown via plotLabel
     local hv = ls:WaitForChild("House", 10)
     if hv then
-        -- v0.30 HUD: house display removed (keep leaderstat connection to avoid breaking older servers)
-        houseLabel.Text = ""
-        hv.Changed:Connect(function()
-            houseLabel.Text = ""
-        end)
+        hv.Changed:Connect(function() end)
     end
 end)
 
@@ -979,18 +913,9 @@ task.spawn(function()
     local collectEv    = Ev("CollectOrb")
     local orbCollected = Ev("OrbCollected")
     local orbStateChanged = Ev("OrbStateChanged")
-    local buyPlotEv    = Ev("PurchasePlot")
-    local plotPurchEv  = Ev("PlotPurchased")
-    local plotSoldEv   = Ev("PlotSold")
-    local upgradeEv    = Ev("UpgradeHouse")
-    local placeCompEv  = Ev("PlaceComputer")
-    local compPlacEv   = Ev("ComputerPlaced")
-    local houseUpgEv   = Ev("HouseUpgraded")
     local dataUpdEv    = Ev("DataUpdated")
     local getDataFn    = Ev("GetPlayerData")
     local dataReadyEv  = Ev("PlayerDataReady")
-    local bridgeBuiltEv = Ev("BridgeBuilt")
-    local bridgeRemEv   = Ev("BridgeRemoved")
 
     -- v0.30 upgrade events
     local plotUpgEv = Ev("PlotUpgraded")
@@ -1038,151 +963,28 @@ task.spawn(function()
         end)
     end
 
-    -- Buy plot (server picks nearest unowned plot, E key shortcut)
-    local function BuyNext()
-        if not buyPlotEv then return end
-        buyPlotEv:FireServer()
-    end
-    buyPlotBtn.MouseButton1Click:Connect(BuyNext)
+    -- E key: interact with plot upgrades / shop
     UserInputService.InputBegan:Connect(function(inp, gp)
         if gp then return end
         if inp.KeyCode == Enum.KeyCode.E then
-            -- Interact: legacy plot purchase OR plot upgrade/decoration in v0.30
-            if plotBillboards and #plotBillboards > 0 then
-                -- Best-effort: server should interpret E near plot upgrade parts.
-                BuyNext()
-            else
-                BuyNext()
-            end
+            -- v0.30: interact with plot upgrade buttons
+            -- (server handles proximity checks)
         end
     end)
 
-    if plotPurchEv then
-        plotPurchEv.OnClientEvent:Connect(function(pid, uid, uname)
-            -- Plot ownership visuals
-            local function setOwnerSign(plotRoot)
-                local candidates = {
-                    plotRoot:FindFirstChild("Sign", true),
-                    plotRoot:FindFirstChild("BillboardGui", true),
-                    plotRoot:FindFirstChild("SurfaceGui", true),
-                }
-
-                for _, inst in ipairs(candidates) do
-                    if inst then
-                        local label = inst:FindFirstChildWhichIsA("TextLabel", true)
-                        if label then
-                            label.Text = tostring(uname or "Unknown")
-                            return
-                        end
-                    end
-                end
-            end
-
-            local plotBase = workspace:FindFirstChild("Plot_" .. tostring(pid)) or workspace:FindFirstChild(tostring(pid))
-            if plotBase then
-                local ownerColor = (uid == player.UserId) and Color3.fromRGB(0, 255, 100) or Color3.fromRGB(100, 150, 255)
-
-                local basePart = plotBase:IsA("BasePart") and plotBase or plotBase:FindFirstChildWhichIsA("BasePart", true)
-                if basePart then
-                    basePart.Color = ownerColor
-                end
-
-                setOwnerSign(plotBase)
-
-                local highlight = Instance.new("Highlight")
-                highlight.Name = "OwnerPulse"
-                highlight.FillColor = ownerColor
-                highlight.OutlineColor = Color3.new(1, 1, 1)
-                highlight.FillTransparency = 0.7
-                highlight.Parent = plotBase
-                task.delay(3, function()
-                    if highlight and highlight.Parent then
-                        highlight:Destroy()
-                    end
-                end)
-
-                if basePart then
-                    local att = Instance.new("Attachment")
-                    att.Name = "OwnerPulseAttachment"
-                    att.Parent = basePart
-                    local emit = Instance.new("ParticleEmitter")
-                    emit.Name = "OwnerPulseEmitter"
-                    emit.Texture = "rbxassetid://243660364"
-                    emit.Lifetime = NumberRange.new(0.35, 0.6)
-                    emit.Speed = NumberRange.new(4, 8)
-                    emit.Rate = 0
-                    emit.Rotation = NumberRange.new(0, 360)
-                    emit.RotSpeed = NumberRange.new(-180, 180)
-                    emit.SpreadAngle = Vector2.new(360, 360)
-                    emit.Color = ColorSequence.new(ownerColor)
-                    emit.LightEmission = 0.6
-                    emit.Size = NumberSequence.new({
-                        NumberSequenceKeypoint.new(0, 0.5),
-                        NumberSequenceKeypoint.new(1, 0),
-                    })
-                    emit.Transparency = NumberSequence.new({
-                        NumberSequenceKeypoint.new(0, 0.15),
-                        NumberSequenceKeypoint.new(1, 1),
-                    })
-                    emit.Parent = att
-                    emit:Emit(20)
-                    task.delay(1, function()
-                        if att and att.Parent then
-                            att:Destroy()
-                        end
-                    end)
-                end
-            else
-                warn("[CLIENT] PlotPurchased: could not find plot base for pid=" .. tostring(pid))
-            end
-
-            if uid ~= player.UserId then
-                Notify(uname.." bought a plot!", Color3.fromRGB(255,210,80))
-            end
-        end)
+    -- Stats panel (v0.30: uses new data format)
+    local function RefreshStats()
+        if not getDataFn then return end
+        local ok, result = pcall(function() return getDataFn:InvokeServer() end)
+        if not (ok and result) then return end
+        local data = (result.ok and result.data) or result
+        if not data then return end
+        -- Stats rows (simplified for v0.30)
+        statValues.data.Text = fmt(data.Data or 0)
+        statValues.earned.Text = fmt(data.TotalEarned or 0)
+        statValues.spent.Text = fmt(data.TotalSpent or 0)
+        statValues.orbs.Text = tostring(data.BlocksCollected or 0)
     end
-
-    if plotSoldEv then
-        plotSoldEv.OnClientEvent:Connect(function(pid)
-            local plotBase = workspace:FindFirstChild("Plot_" .. tostring(pid)) or workspace:FindFirstChild(tostring(pid))
-            if plotBase then
-                local old = plotBase:FindFirstChild("OwnerPulse")
-                if old then
-                    old:Destroy()
-                end
-            end
-        end)
-    end
-
-    if bridgeBuiltEv then
-        bridgeBuiltEv.OnClientEvent:Connect(function(pid, ownerName, ownerUserId)
-            Notify("🌉 Bridge built to "..tostring(pid).." by "..tostring(ownerName).."!", C.CYAN)
-        end)
-    end
-
-    if bridgeRemEv then
-        bridgeRemEv.OnClientEvent:Connect(function(pid)
-            Notify("🌉 Bridge removed from "..tostring(pid), C.DIM)
-        end)
-    end
-
-    -- House upgrade events
-    if houseUpgEv then
-        houseUpgEv.OnClientEvent:Connect(function(tier, name)
-            houseLabel.Text = "🏠 "..name
-        end)
-    end
-
-    -- Computer placed
-    if compPlacEv then
-        compPlacEv.OnClientEvent:Connect(function(pid, tier, name, dps)
-            Notify(name.." online! +"..tostring(dps).."/s ⚡", C.BLUE)
-        end)
-    end
-
-    -- ============================================================
-    -- v0.30 UPGRADE EVENTS + UI UPDATES
-    -- ============================================================
     if plotUpgEv then
         plotUpgEv.OnClientEvent:Connect(function(plotId, newBuildingName, dpsBonus)
             plotState.plotId = plotId or plotState.plotId
@@ -1275,17 +1077,19 @@ task.spawn(function()
         local snapshot = data.data
         if type(snapshot) ~= "table" then return end
 
-        local hn = HOUSE_NAMES[snapshot.HouseTier] or "Shack"
-        statValues.house.Text  = hn.." (T"..snapshot.HouseTier..")"
+        local plotName = PLOT_BUILDING_NAMES[snapshot.PlotTier] or "Empty Plot"
+        statValues.house.Text  = plotName
         statValues.plots.Text  = tostring(#(snapshot.Plots or {}))
         statValues.comps.Text  = tostring(#(snapshot.Computers or {}))
         statValues.orbs.Text   = tostring(snapshot.BlocksCollected or 0)
         statValues.data.Text   = fmt(snapshot.Data)
         statValues.earned.Text = fmt(snapshot.TotalEarned or 0)
         statValues.spent.Text  = fmt(snapshot.TotalSpent or 0)
-        local dps = 1
-        for _, comp in ipairs(snapshot.Computers or {}) do
-            dps = dps + (COMP_TIERS[comp.tier] and COMP_TIERS[comp.tier].dps or 0)
+        -- v0.30: DPS from plot + upgrades (not computers)
+        local dps = 0.5  -- base
+        if snapshot.PlotTier then
+            local tier = math.min(snapshot.PlotTier, #PLOT_BUILDING_NAMES)
+            dps = dps + ({0, 5, 15, 50, 150, 400, 1000, 3000})[tier] or 0
         end
         SetDps(dps)
     end
@@ -1295,7 +1099,6 @@ task.spawn(function()
             Notify("Loading...", C.DIM)
             return
         end
-        shopPanel.Visible = false
         panel.Visible = not panel.Visible
         if panel.Visible then RefreshStats() end
     end)
@@ -1311,40 +1114,13 @@ task.spawn(function()
         end
     end)
 
-    -- ---- SHOP PANEL ----
-    ShopHeader("─── Computers ───")
-    for i, ct in ipairs(COMP_TIERS) do
-        local tier = i
-        ShopItem("💻", ct.name, ct.cost, "+"..ct.dps.."/s passive income", C.BLUE, function()
-            if not placeCompEv or not getDataFn then return end
-            local ok, data = pcall(function() return getDataFn:InvokeServer() end)
-            local snapshot = ok and data and data.ok and data.data
-            if snapshot and snapshot.Plots and #snapshot.Plots > 0 then
-                placeCompEv:FireServer(snapshot.Plots[1], tier)
-            else
-                Notify("Buy a plot first! [E key]", C.RED)
-            end
-        end)
-    end
-
-    ShopHeader("─── House Upgrades ───")
-    for i = 2, #HOUSE_NAMES do
-        local tier = i
-        ShopItem("🏠", HOUSE_NAMES[i], HOUSE_COSTS[i],
-            "Max "..({1,2,4,8,16})[i].." computers", C.PURPLE, function()
-            if upgradeEv then upgradeEv:FireServer() end
-        end)
-    end
-
+    -- v0.30 shop toggle
     local function ToggleShopUI()
         panel.Visible = false
-        -- Prefer new v0.30 shopFrame, keep legacy shopPanel for older servers
         shopFrame.Visible = not shopFrame.Visible
-        shopPanel.Visible = false
     end
 
     shopBtn.MouseButton1Click:Connect(ToggleShopUI)
-    shopCloseBtn.MouseButton1Click:Connect(function() shopPanel.Visible = false end)
     shopClose.MouseButton1Click:Connect(function() shopFrame.Visible = false end)
 
     UserInputService.InputBegan:Connect(function(inp, gp)
