@@ -350,6 +350,7 @@ task.spawn(function()
     local notifEv      = Ev("Notification")
     local collectEv    = Ev("CollectOrb")
     local orbCollected = Ev("OrbCollected")
+    local orbStateChanged = Ev("OrbStateChanged")
     local buyPlotEv    = Ev("PurchasePlot")
     local plotPurchEv  = Ev("PlotPurchased")
     local upgradeEv    = Ev("UpgradeHouse")
@@ -512,9 +513,9 @@ task.spawn(function()
     -- ORB COLLECTION
     -- ============================================================
     if collectEv and orbCollected then
-        -- Orb visual: when server confirms collection, fade out nearby parts
         orbCollected.OnClientEvent:Connect(function(orbPos, respawnTime)
-            if not orbPos then return end
+            if typeof(orbPos) ~= "Vector3" then return end
+
             local orbFolder = workspace:FindFirstChild("DataOrbs")
             if not orbFolder then return end
 
@@ -540,11 +541,27 @@ task.spawn(function()
                 for _, info in ipairs(affectedParts) do
                     if info.part and info.part.Parent then
                         info.part.Transparency = info.origAlpha
-                        info.part.CanCollide   = info.part.Name == "OrbRing"
+                        info.part.CanCollide   = info.part.Name:match("^OrbRing") ~= nil
                     end
                 end
             end)
         end)
+
+        if orbStateChanged then
+            orbStateChanged.OnClientEvent:Connect(function(orbId, available)
+                if type(orbId) ~= "string" then return end
+                if type(available) ~= "boolean" then return end
+
+                local orbFolder = workspace:FindFirstChild("DataOrbs")
+                if not orbFolder then return end
+
+                local ring = orbFolder:FindFirstChild(orbId)
+                if ring and ring:IsA("BasePart") then
+                    ring.Transparency = available and 0 or 1
+                    ring.CanCollide = available
+                end
+            end)
+        end
 
         -- Touch handler
         local function hookOrbs(folder)
@@ -557,8 +574,8 @@ task.spawn(function()
                 local now = tick()
                 if debounce[ring] and (now - debounce[ring]) < 0.6 then return end
                 debounce[ring] = now
-                -- Pass orb position so server can send it back for visual
-                collectEv:FireServer(ring.Position)
+                -- Pass orb id (ring.Name) so server can enforce per-orb cooldown
+                collectEv:FireServer(ring.Name)
             end
 
             local n = 0

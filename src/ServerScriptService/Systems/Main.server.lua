@@ -84,6 +84,7 @@ local BridgeRemoved     = MakeEvent("BridgeRemoved")
 local ComputerPlaced    = MakeEvent("ComputerPlaced")
 local HouseUpgraded     = MakeEvent("HouseUpgraded")
 local OrbCollected      = MakeEvent("OrbCollected")   -- fires orb position back so client can animate
+local OrbStateChanged   = MakeEvent("OrbStateChanged") -- server authoritative orb availability
 local GetPlayerData     = MakeEvent("GetPlayerData", "RemoteFunction")
 
 -- NOW parent — entire subtree replicates as one atomic snapshot
@@ -116,6 +117,37 @@ local CONFIG = {
     DAILY_REWARDS  = {50, 75, 100, 150, 200, 300, 500},
     ORB_RESPAWN    = 30,  -- seconds before orb visually respawns on client
 }
+
+-- ============================================================
+-- ORB REGISTRY / STATE (server authoritative)
+-- ============================================================
+local OrbRegistry = {}  -- orbId -> BasePart (OrbRing)
+local OrbState = {}     -- orbId -> {available = bool, cooldownUntil = timestamp}
+
+local function RegisterOrbs()
+    local dataOrbsFolder = workspace:FindFirstChild("DataOrbs")
+    if not dataOrbsFolder then
+        warn("[ORB] workspace.DataOrbs missing; orb registry not initialized")
+        return
+    end
+
+    local n = 0
+    for _, inst in ipairs(dataOrbsFolder:GetChildren()) do
+        if inst:IsA("BasePart") and inst.Name:match("^OrbRing_") then
+            local orbId = inst.Name
+            OrbRegistry[orbId] = inst
+            OrbState[orbId] = {available = true, cooldownUntil = 0}
+            n = n + 1
+        end
+    end
+    print("[ORB] Registered " .. n .. " orbs")
+end
+
+task.spawn(function()
+    -- allow WorldBuilder to create DataOrbs
+    task.wait(1)
+    RegisterOrbs()
+end)
 
 -- ============================================================
 -- PLAYER DATA
@@ -360,7 +392,7 @@ ClaimDailyReward.OnServerEvent:Connect(function(player)
 end)
 
 local orbCooldowns = {}
-CollectOrb.OnServerEvent:Connect(function(player, orbPos)
+CollectOrb.OnServerEvent:Connect(function(player, orbId)
     -- Server-side validation (anti-cheat): ensure orb is real and near the player
     local character = player.Character
     if not character then return end
@@ -368,38 +400,42 @@ CollectOrb.OnServerEvent:Connect(function(player, orbPos)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    if typeof(orbPos) ~= "Vector3" then return end
+    if type(orbId) ~= "string" then return end
 
-    -- (1) Verify claimed position is near an actual orb in workspace.DataOrbs
+    -- (1) Verify orb exists in workspace.DataOrbs and is a known OrbRing_* instance
     local dataOrbsFolder = workspace:FindFirstChild("DataOrbs")
     if not dataOrbsFolder then
-        warn("[ANTI-CHEAT] DataOrbs folder missing; cannot validate orb collection for " .. player.Name)
-        player:Kick("[ANTI-CHEAT] Orb validation unavailable. Please rejoin.")
+        warn("[ANTI-CHEAT] DataOrbs folder missing; denying orb collection for " .. player.Name)
         return
     end
 
-    local nearestOrb
-    local nearestDist = math.huge
-    for _, inst in ipairs(dataOrbsFolder:GetChildren()) do
-        if inst:IsA("BasePart") then
-            local d = (inst.Position - orbPos).Magnitude
-            if d < nearestDist then
-                nearestDist = d
-                nearestOrb = inst
-            end
-        end
+    local orbPart = OrbRegistry[orbId]
+    if not (orbPart and orbPart.Parent == dataOrbsFolder) then
+        -- Attempt lazy re-register (WorldBuilder might have rebuilt)
+        RegisterOrbs()
+        orbPart = OrbRegistry[orbId]
     end
 
-    if (not nearestOrb) or nearestDist > 5 then
-        warn(string.format("[ANTI-CHEAT] %s attempted orb collection at invalid position (nearest orb dist=%.2f)", player.Name, nearestDist))
-        player:Kick("[ANTI-CHEAT] Invalid orb collection detected.")
+    if not (orbPart and orbPart.Parent == dataOrbsFolder) then
+        warn(string.format("[ANTI-CHEAT] %s attempted orb collection for invalid orbId=%s", player.Name, tostring(orbId)))
         return
     end
 
+    local state = OrbState[orbId]
+    if not state then
+        state = {available = true, cooldownUntil = 0}
+        OrbState[orbId] = state
+    end
+
+    local nowT = os.clock()
+    if (not state.available) and nowT < (state.cooldownUntil or 0) then
+        return
+    end
+
+    local orbPos = orbPart.Position
     local distance = (hrp.Position - orbPos).Magnitude
     if distance > 50 then
         warn("[ANTI-CHEAT] " .. player.Name .. " attempted orb collection at distance " .. distance)
-        player:Kick("[ANTI-CHEAT] Invalid orb collection detected.")
         return
     end
 
@@ -407,14 +443,30 @@ CollectOrb.OnServerEvent:Connect(function(player, orbPos)
     if orbCooldowns[player.UserId] and (now - orbCooldowns[player.UserId]) < 0.4 then return end
     orbCooldowns[player.UserId] = now
 
+    -- Mark orb unavailable
+    state.available = false
+    state.cooldownUntil = nowT + CONFIG.ORB_RESPAWN
+    OrbStateChanged:FireAllClients(orbId, false)
+
+    print("[ORB] " .. player.Name .. " collected " .. orbId)
+
     local data = PlayerData[player.UserId]; if not data then return end
     data.Data = data.Data + CONFIG.ORB_REWARD
     data.TotalEarned = data.TotalEarned + CONFIG.ORB_REWARD
     data.BlocksCollected = (data.BlocksCollected or 0) + 1
     UpdateData(player)
 
-    -- Fire back orb position so client can animate disappear
+    -- keep existing client feedback event
     OrbCollected:FireClient(player, orbPos, CONFIG.ORB_RESPAWN)
+
+    task.delay(CONFIG.ORB_RESPAWN, function()
+        local st = OrbState[orbId]
+        if not st then return end
+        st.available = true
+        st.cooldownUntil = 0
+        OrbStateChanged:FireAllClients(orbId, true)
+        print("[ORB] Orb " .. orbId .. " now available")
+    end)
 end)
 
 PurchasePlot.OnServerEvent:Connect(function(player, plotId)

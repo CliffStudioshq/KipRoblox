@@ -542,6 +542,8 @@ local function Orb(cx, cy, cz, brickCol, folder)
     lbl.BackgroundTransparency=1; lbl.Text="✦ +5 Data"
     lbl.TextColor3=brickCol.Color; lbl.TextSize=14; lbl.Font=Enum.Font.GothamBold
     lbl.TextStrokeTransparency=0.15; lbl.TextStrokeColor3=Color3.new(0,0,0); lbl.Parent=bb
+
+    return ring
 end
 
 -- ============================================================
@@ -912,10 +914,15 @@ section("Orbs", function()
         {count=14, radius=130, y=10, col=BrickColor.new("Bright violet")},
         {count=12, radius=175, y=12, col=BrickColor.new("Bright yellow")},
     }
+    local orbIndex = 0
     for ri, ring in ipairs(rings) do
         for i=1,ring.count do
             local a=(i/ring.count)*PI*2+(ri*0.2)
-            Orb(math.cos(a)*ring.radius, ring.y, math.sin(a)*ring.radius, ring.col, orbs)
+            orbIndex = orbIndex + 1
+            local createdRing = Orb(math.cos(a)*ring.radius, ring.y, math.sin(a)*ring.radius, ring.col, orbs)
+            if createdRing and createdRing:IsA("BasePart") then
+                createdRing.Name = "OrbRing_" .. orbIndex
+            end
         end
         task.wait()
     end
