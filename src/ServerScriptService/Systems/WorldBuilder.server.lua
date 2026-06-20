@@ -828,7 +828,7 @@ section("Plots", function()
     for _, pp in ipairs(coords) do
         local x,z   = pp[1],pp[2]; local cx,cz=x*170,z*170
         local dist  = math.max(math.abs(x),math.abs(z))
-        local price = math.floor(50*(2^dist))
+        -- Plot pricing is dynamic (based on purchase order), so do not display a fixed price here.
 
         P({name="Plot_"..x.."_"..z, size=Vector3.new(116,0.6,116), pos=Vector3.new(cx,0.3,cz),
            color=BrickColor.new("Dark green"), mat=Enum.Material.SmoothPlastic, parent=pf})
@@ -843,7 +843,7 @@ section("Plots", function()
         P({name="SignBoard", size=Vector3.new(9,4,0.4),    pos=Vector3.new(cx,8,cz),   color=BrickColor.new("Medium stone grey"), mat=Enum.Material.SmoothPlastic, parent=pf})
         local anchor=P({name="SignBB",size=Vector3.new(0.1,0.1,0.1),pos=Vector3.new(cx,9.5,cz),alpha=1,collide=false,parent=pf})
         local bb=Instance.new("BillboardGui"); bb.Size=UDim2.new(0,160,0,70); bb.StudsOffset=Vector3.new(0,3,0); bb.AlwaysOnTop=false; bb.Parent=anchor
-        local t1=Instance.new("TextLabel"); t1.Size=UDim2.new(1,0,0.45,0); t1.BackgroundTransparency=1; t1.Text="💰 "..price.." Data"; t1.TextColor3=Color3.fromRGB(255,220,100); t1.TextSize=15; t1.Font=Enum.Font.GothamBold; t1.TextStrokeTransparency=0.35; t1.Parent=bb
+        local t1=Instance.new("TextLabel"); t1.Size=UDim2.new(1,0,0.45,0); t1.BackgroundTransparency=1; t1.Text="💰 Dynamic Pricing"; t1.TextColor3=Color3.fromRGB(255,220,100); t1.TextSize=15; t1.Font=Enum.Font.GothamBold; t1.TextStrokeTransparency=0.35; t1.Parent=bb
         local t2=Instance.new("TextLabel"); t2.Size=UDim2.new(1,0,0.4,0); t2.Position=UDim2.new(0,0,0.5,0); t2.BackgroundTransparency=1; t2.Text="🌿 AVAILABLE"; t2.TextColor3=Color3.fromRGB(100,255,150); t2.TextSize=12; t2.Font=Enum.Font.GothamBold; t2.TextStrokeTransparency=0.5; t2.Parent=bb
         Tree(cx+38,cz+38,0.7,pf); Tree(cx-38,cz-38,0.6,pf); Tree(cx+38,cz-38,0.5,pf)
         Bush(cx-30,cz+30,0.8,pf); Bush(cx+20,cz-30,0.7,pf)

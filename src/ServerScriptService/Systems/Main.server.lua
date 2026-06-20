@@ -120,6 +120,24 @@ local CONFIG = {
 }
 
 -- ============================================================
+-- TELEMETRY (lightweight)
+-- ============================================================
+local Telemetry = {
+    invalidCalls = {},  -- [userId] = count
+    lastWarned = {},    -- [userId] = timestamp
+}
+
+local function LogInvalidCall(player, action)
+    local uid = player.UserId
+    Telemetry.invalidCalls[uid] = (Telemetry.invalidCalls[uid] or 0) + 1
+    local now = tick()
+    if (not Telemetry.lastWarned[uid]) or (now - Telemetry.lastWarned[uid]) > 30 then
+        warn(string.format("[TELEMETRY] %s: invalid %s (%d total)", player.Name, action, Telemetry.invalidCalls[uid]))
+        Telemetry.lastWarned[uid] = now
+    end
+end
+
+-- ============================================================
 -- ORB REGISTRY / STATE (server authoritative)
 -- ============================================================
 local OrbRegistry = {}  -- orbId -> BasePart (OrbRing)
@@ -217,7 +235,8 @@ local function InitPlots()
             ownerName = nil,
             x = x, z = z,
             dist      = math.max(math.abs(x), math.abs(z)),
-            price     = math.floor(50 * (2 ^ math.max(math.abs(x), math.abs(z)))),
+            -- price is computed dynamically at purchase-time based on purchase index
+            price     = 0,
             center    = Vector3.new(x*170, 0.5, z*170),
             computers = {},
         }
@@ -401,7 +420,11 @@ ClaimDailyReward.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]; if not data then return end
     local now   = os.time()
     local since = math.floor((now - (data.LastDailyReward or 0)) / 86400)
-    if since == 0 then Notify(player, "Already claimed today!", "error"); return end
+    if since == 0 then
+        LogInvalidCall(player, "ClaimDailyReward")
+        Notify(player, "Already claimed today!", "error")
+        return
+    end
     if since > 1 then data.DailyStreak = 1
     else data.DailyStreak = (data.DailyStreak or 0) + 1 end
     local idx    = ((data.DailyStreak-1) % #CONFIG.DAILY_REWARDS) + 1
@@ -423,7 +446,10 @@ CollectOrb.OnServerEvent:Connect(function(player, orbId)
     local hrp = character:FindFirstChild("HumanoidRootPart")
     if not hrp then return end
 
-    if type(orbId) ~= "string" then return end
+    if type(orbId) ~= "string" then
+        LogInvalidCall(player, "CollectOrb")
+        return
+    end
 
     -- (1) Verify orb exists in workspace.DataOrbs and is a known OrbRing_* instance
     local dataOrbsFolder = workspace:FindFirstChild("DataOrbs")
@@ -440,6 +466,7 @@ CollectOrb.OnServerEvent:Connect(function(player, orbId)
     end
 
     if not (orbPart and orbPart.Parent == dataOrbsFolder) then
+        LogInvalidCall(player, "CollectOrb")
         warn(string.format("[ANTI-CHEAT] %s attempted orb collection for invalid orbId=%s", player.Name, tostring(orbId)))
         return
     end
@@ -497,12 +524,14 @@ PurchasePlot.OnServerEvent:Connect(function(player, plotId)
     if type(plotId) == "string" then
         plot = Plots[plotId]
         if not plot then
+            LogInvalidCall(player, "PurchasePlot")
             Notify(player, "Plot not found!", "error")
             return
         end
     else
         plot = FindNearestPlot(player)
         if not plot then
+            LogInvalidCall(player, "PurchasePlot")
             Notify(player, "Stand near an unowned plot!", "error")
             return
         end
@@ -512,9 +541,14 @@ PurchasePlot.OnServerEvent:Connect(function(player, plotId)
     local data = PlayerData[player.UserId]; if not data then return end
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
     if safeLen(data.Plots) >= ht.maxPlots then Notify(player, "Upgrade house for more plots!", "error"); return end
-    if data.Data < plot.price then Notify(player, "Need "..plot.price.." Data!", "error"); return end
-    data.Data = data.Data - plot.price
-    data.TotalSpent = data.TotalSpent + plot.price
+
+    local plotPrice = math.floor(100 * (1.5 ^ #data.Plots))
+    if data.Data < plotPrice then Notify(player, "Need "..plotPrice.." Data!", "error"); return end
+
+    -- cache last paid price for refund math (SellPlot refunds 50%)
+    plot.price = plotPrice
+    data.Data = data.Data - plotPrice
+    data.TotalSpent = data.TotalSpent + plotPrice
     plot.owner = player.UserId; plot.ownerName = player.Name
     table.insert(data.Plots, plotId)
     UpdateData(player)
@@ -525,14 +559,21 @@ PurchasePlot.OnServerEvent:Connect(function(player, plotId)
         warn("[BRIDGE] BuildBridge function missing (WorldBuilder not loaded?)")
     end
     BridgeBuilt:FireAllClients(plotId, player.Name, player.UserId)
-    Notify(player, "Plot "..plotId.." purchased!", "success")
+    Notify(player, "Plot purchased for "..plotPrice.." Data!", "success")
     print("[GAME] "..player.Name.." bought "..plotId)
 end)
 
 SellPlot.OnServerEvent:Connect(function(player, plotId)
-    if type(plotId) ~= "string" then return end
+    if type(plotId) ~= "string" then
+        LogInvalidCall(player, "SellPlot")
+        return
+    end
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error"); return end
+    if not plot or plot.owner ~= player.UserId then
+        LogInvalidCall(player, "SellPlot")
+        Notify(player, "Not your plot!", "error")
+        return
+    end
     local data = PlayerData[player.UserId]; if not data then return end
 
     if typeof(RemoveBridge) == "function" then
@@ -554,10 +595,20 @@ SellPlot.OnServerEvent:Connect(function(player, plotId)
 end)
 
 PlaceComputer.OnServerEvent:Connect(function(player, plotId, tier)
-    if type(plotId) ~= "string" then return end
+    if type(plotId) ~= "string" then
+        LogInvalidCall(player, "PlaceComputer")
+        return
+    end
     local plot = Plots[plotId]
-    if not plot or plot.owner ~= player.UserId then Notify(player, "Not your plot!", "error"); return end
+    if not plot or plot.owner ~= player.UserId then
+        LogInvalidCall(player, "PlaceComputer")
+        Notify(player, "Not your plot!", "error")
+        return
+    end
     local data = PlayerData[player.UserId]; if not data then return end
+    if tonumber(tier) == nil then
+        LogInvalidCall(player, "PlaceComputer")
+    end
     tier = math.clamp(math.floor(tonumber(tier) or 1), 1, #CONFIG.COMPUTER_TIERS)
     local ct = CONFIG.COMPUTER_TIERS[tier]
     local ht = CONFIG.HOUSE_TIERS[data.HouseTier]
@@ -575,7 +626,11 @@ end)
 UpgradeHouse.OnServerEvent:Connect(function(player)
     local data = PlayerData[player.UserId]; if not data then return end
     local nt = data.HouseTier + 1
-    if nt > #CONFIG.HOUSE_TIERS then Notify(player, "Already max!", "error"); return end
+    if nt > #CONFIG.HOUSE_TIERS then
+        LogInvalidCall(player, "UpgradeHouse")
+        Notify(player, "Already max!", "error")
+        return
+    end
     local cost = CONFIG.HOUSE_TIERS[nt].cost
     if data.Data < cost then Notify(player, "Need "..cost.." Data!", "error"); return end
     data.Data = data.Data - cost; data.TotalSpent = data.TotalSpent + cost
