@@ -599,7 +599,7 @@ local function findPlotPart(plotId)
     local pf = workspace:FindFirstChild("PlotMarkers")
     if not pf then return nil end
 
-    local x, z = plotId:match("plot_(-?%d+)_(-?%d+)")
+    local x, z = plotId:match("[Pp]lot_(-?%d+)_(-?%d+)")
     if not x or not z then return nil end
     return pf:FindFirstChild("Plot_" .. x .. "_" .. z)
 end
@@ -1376,14 +1376,16 @@ section("Plots", function()
     end
 
     -- Build bridges from hub to each plot
-    local hubPlatform = workspace:FindFirstChild("HubPlatform")
+    local hubPlatform = getHubPlatform()
     if not hubPlatform then
-        -- Try to find any hub part
-        for _, p in ipairs(workspace:GetChildren()) do
-            if p.Name == "HubPlatform" or p.Name == "Hub" then
-                hubPlatform = p
-                break
-            end
+        -- Fallback: search workspace for hub part
+        local dataHub = workspace:FindFirstChild("DataHub")
+        if dataHub then hubPlatform = dataHub:FindFirstChild("HubPlatform") end
+    end
+    if not hubPlatform then
+        -- Last resort: search all workspace children
+        for _, p in ipairs(workspace:GetDescendants()) do
+            if p.Name == "HubPlatform" then hubPlatform = p; break end
         end
     end
 
