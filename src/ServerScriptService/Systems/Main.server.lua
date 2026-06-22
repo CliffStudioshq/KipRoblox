@@ -5,8 +5,9 @@
       - OrbCollected RemoteEvent so client can animate orb disappear/respawn
       - All previous fixes retained
 ]]
-
 local Players            = game:GetService("Players")
+Players.MaxPlayers = 8
+
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 local DataStoreService   = game:GetService("DataStoreService")
 
@@ -911,7 +912,12 @@ end)
 -- PLAYER CONNECTIONS
 -- ============================================================
 local function onPlayerAdded(player)
-    print("[JOIN] "..player.Name)
+    -- 8-player limit (matches 8 plots)
+    if #Players:GetPlayers() > 8 then
+        player:Kick("Server full (8/8 players). Try again later!")
+        return
+    end
+    print(("[JOIN] %s (%d/8)"):format(player.Name, #Players:GetPlayers()))
     task.spawn(LoadPlayerData, player)
 end
 
@@ -919,7 +925,6 @@ Players.PlayerAdded:Connect(onPlayerAdded)
 -- Backfill: handles Studio local test where player joins before script connects
 for _, p in ipairs(Players:GetPlayers()) do
     task.spawn(onPlayerAdded, p)
-end
 
 Players.PlayerRemoving:Connect(function(player)
     print("[LEAVE] "..player.Name)
