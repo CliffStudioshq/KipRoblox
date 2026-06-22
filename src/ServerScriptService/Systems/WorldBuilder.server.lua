@@ -1,5 +1,5 @@
 --[[
-    WorldBuilder.server.lua — DataTycoon v0.22
+    WorldBuilder.server.lua — DataTycoon v0.30
     Golden hour lighting, terrain grass floor, mountain backdrop,
     Clouds, ShadowMap technology, toned bloom.
     Research applied:
@@ -17,7 +17,7 @@
         versioning, offline income cooldown) are in Main.server.lua
 ]]
 
-print("[WORLD] WorldBuilder v0.22 starting...")
+print("[WORLD] WorldBuilder v0.30 starting...")
 print("[PERF] Estimated part count reduction: 3581 -> 2029")
 
 local Players = game:GetService("Players")
@@ -882,117 +882,66 @@ end
 -- HELPERS
 -- ============================================================
 local function Tree(x, z, s, folder)
-    -- 4 tree archetypes for variety: oak, pine, birch, tropical
     s = s or 1
-    local t = R(1,4)
-    local yaw = math.rad(R(-180, 180))
+    local t = R(1, 3)  -- only 3 archetypes, each 2 parts
 
-    local function canopyBall(name, pos, size, brick)
-        local c = P({
-            name=name,
-            size=size,
-            pos=pos,
-            color=brick,
-            mat=Enum.Material.LeafyGrass,
-            shape=Enum.PartType.Ball,
-            collide=false,
-            parent=folder,
-        })
-        c.CFrame = CFrame.new(pos) * CFrame.Angles(0, yaw, 0)
+    local trunkCol = BrickColor.new("Reddish brown")
+    local function canopy(pos, size, col)
+        local c = P({name="Canopy", size=size, pos=pos, color=col,
+            mat=Enum.Material.LeafyGrass, shape=Enum.PartType.Ball,
+            collide=false, decor=true, parent=folder})
         return c
     end
 
-    local trunkCol = BrickColor.new("Reddish brown")
-    local greens = {
-        BrickColor.new("Forest green"),
-        BrickColor.new("Earth green"),
-        BrickColor.new("Dark green"),
-        BrickColor.new("Sea green"),
-        BrickColor.new("Camo"),
-    }
-
     if t == 1 then
-        -- Oak: wide canopy, 3 layers
-        local h = (10 + R(-2,3)) * s
-        P({name="Trunk", size=Vector3.new(2.3*s, h, 2.3*s), pos=Vector3.new(x, h/2, z), color=trunkCol, mat=Enum.Material.Wood, parent=folder})
-        local topY = h + (4.5*s)
-        canopyBall("Canopy1", Vector3.new(x, topY, z), Vector3.new(15*s, 10*s, 15*s), greens[R(#greens)])
-        canopyBall("Canopy2", Vector3.new(x+1.2*s, topY+3.5*s, z-0.7*s), Vector3.new(12*s, 8*s, 12*s), greens[R(#greens)])
-        canopyBall("Canopy3", Vector3.new(x-1.0*s, topY+6.0*s, z+0.9*s), Vector3.new(9*s, 6*s, 9*s), greens[R(#greens)])
+        -- Oak: trunk + single wide canopy (2 parts)
+        local h = (8 + R(-1, 2)) * s
+        P({name="Trunk", size=Vector3.new(1.8*s, h, 1.8*s),
+            pos=Vector3.new(x, h/2, z), color=trunkCol, mat=Enum.Material.Wood, parent=folder})
+        canopy(Vector3.new(x, h + 3*s, z),
+            Vector3.new(12*s, 8*s, 12*s),
+            BrickColor.new("Forest green"))
 
     elseif t == 2 then
-        -- Pine: tall trunk, conical canopy stack
-        local h = (14 + R(-2,6)) * s
-        P({name="Trunk", size=Vector3.new(1.8*s, h, 1.8*s), pos=Vector3.new(x, h/2, z), color=BrickColor.new("Brown"), mat=Enum.Material.Wood, parent=folder})
-        local baseY = h*0.75
-        local pineCols = {BrickColor.new("Dark green"), BrickColor.new("Camo"), BrickColor.new("Forest green")}
-        for i=1,4 do
-            local layer = 1 - (i-1)*0.18
-            local rad = (10*s) * layer
-            local y = baseY + (i-1) * (3.2*s)
-            canopyBall("Needles"..i, Vector3.new(x, y, z), Vector3.new(rad, 7*s*layer, rad), pineCols[R(#pineCols)])
-        end
-
-    elseif t == 3 then
-        -- Birch: thin trunk, small light canopy
-        local h = (11 + R(-1,4)) * s
-        P({name="Trunk", size=Vector3.new(1.3*s, h, 1.3*s), pos=Vector3.new(x, h/2, z), color=BrickColor.new("Institutional white"), mat=Enum.Material.Wood, parent=folder})
-        P({name="BirchStripe", size=Vector3.new(1.35*s, h*0.7, 1.35*s), pos=Vector3.new(x, h*0.55, z), color=BrickColor.new("Dark stone grey"), mat=Enum.Material.Wood, parent=folder, alpha=0.35})
-        local col = (R() < 0.35) and BrickColor.new("New Yeller") or BrickColor.new("Light green")
-        local y = h + (3.5*s)
-        canopyBall("Canopy1", Vector3.new(x, y, z), Vector3.new(9*s, 6*s, 9*s), col)
-        canopyBall("Canopy2", Vector3.new(x+0.8*s, y+2.2*s, z-0.6*s), Vector3.new(6.5*s, 4.2*s, 6.5*s), BrickColor.new("Light green"))
+        -- Pine: trunk + conical canopy (2 parts)
+        local h = (12 + R(-1, 3)) * s
+        P({name="Trunk", size=Vector3.new(1.4*s, h, 1.4*s),
+            pos=Vector3.new(x, h/2, z), color=BrickColor.new("Brown"), mat=Enum.Material.Wood, parent=folder})
+        canopy(Vector3.new(x, h + 2*s, z),
+            Vector3.new(8*s, 10*s, 8*s),
+            BrickColor.new("Dark green"))
 
     else
-        -- Tropical: palm-like, slight curved trunk + fronds
-        local h = (12 + R(-1,5)) * s
-        local bend = (R(-6,6)) * 0.12 * s
-        local trunk = P({name="Trunk", size=Vector3.new(1.9*s, h, 1.9*s), pos=Vector3.new(x, h/2, z), color=BrickColor.new("Dark orange"), mat=Enum.Material.Wood, parent=folder})
-        trunk.CFrame = CFrame.new(x, h/2, z) * CFrame.Angles(0, yaw, math.rad(bend*10))
-
-        local top = Vector3.new(x, h + (1.5*s), z)
-        local palmCols = {BrickColor.new("Lime green"), BrickColor.new("Bright green"), BrickColor.new("Sea green")}
-        canopyBall("PalmCore", top, Vector3.new(4.2*s, 2.6*s, 4.2*s), palmCols[R(#palmCols)])
-        for i=1,6 do
-            local a = (i/6)*PI*2 + (yaw*0.35)
-            local fx = x + math.cos(a) * (5.5*s)
-            local fz = z + math.sin(a) * (5.5*s)
-            local frond = P({name="Frond"..i, size=Vector3.new(8.5*s, 0.35*s, 2.2*s), pos=Vector3.new(fx, top.Y, fz),
-                color=palmCols[R(#palmCols)], mat=Enum.Material.LeafyGrass, parent=folder, collide=false})
-            frond.CFrame = CFrame.new(fx, top.Y, fz) * CFrame.Angles(math.rad(R(-18, 10)), a, 0)
-        end
+        -- Birch: trunk + light canopy (2 parts)
+        local h = (10 + R(-1, 2)) * s
+        P({name="Trunk", size=Vector3.new(1.2*s, h, 1.2*s),
+            pos=Vector3.new(x, h/2, z), color=BrickColor.new("Institutional white"), mat=Enum.Material.Wood, parent=folder})
+        canopy(Vector3.new(x, h + 2.5*s, z),
+            Vector3.new(7*s, 5*s, 7*s),
+            BrickColor.new("Lime green"))
     end
 end
 
 local function Bush(x, z, s, folder)
     s = s or 1
-    local p = P({name="Bush", size=Vector3.new(4.2*s,3.2*s,4.2*s),
-        pos=Vector3.new(x+R(-2,2)*0.35, 1.55*s, z+R(-2,2)*0.35),
-        color=BrickColor.new("Dark green"), mat=Enum.Material.Grass,
+    P({name="Bush", size=Vector3.new(4.2*s,3.2*s,4.2*s),
+        pos=Vector3.new(x, 1.55*s, z),
+        color=BrickColor.new("Dark green"), mat=Enum.Material.LeafyGrass,
         shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
-    p.Transparency = 0.05
 end
 
 local function Flower(x, z, folder)
-    -- Simplified flower: 2 parts (cyl stem + ball head)
-    local stemH = 0.95 + R()*0.75
-    local stem = P({name="FStem", size=Vector3.new(0.18, stemH, 0.18), pos=Vector3.new(x, stemH/2, z),
-        color=BrickColor.new("Earth green"), mat=Enum.Material.LeafyGrass,
-        shape=Enum.PartType.Cylinder, collide=false, decor=true, parent=folder})
-    stem.CFrame = CFrame.new(x, stemH/2, z) * CFrame.Angles(0, math.rad(R(-180,180)), math.rad(90))
-
-    local palette = {
-        Color3.fromRGB(255, 85, 127),  -- pink
-        Color3.fromRGB(255, 80, 80),   -- red
-        Color3.fromRGB(255, 200, 60),  -- yellow
-        Color3.fromRGB(190, 130, 255), -- lavender
-        Color3.fromRGB(90, 200, 255),  -- cyan
-    }
-    local head = P({name="FHead", size=Vector3.new(0.65,0.65,0.65), pos=Vector3.new(x, stemH+0.25, z),
-        color=BrickColor.new("Institutional white"), mat=Enum.Material.Neon,
-        shape=Enum.PartType.Ball, collide=false, decor=true, parent=folder})
-    head.Color = palette[R(#palette)]
-    head.Transparency = 0.05
+    -- Single-part flower accent
+    local col = ({
+        BrickColor.new("Bright red"),
+        BrickColor.new("New Yeller"),
+        BrickColor.new("Hot pink"),
+        BrickColor.new("Bright violet"),
+        BrickColor.new("Cyan"),
+    })[R(1,5)]
+    P({name="Flower", size=Vector3.new(0.7, 0.7, 0.7), pos=Vector3.new(x, 0.45, z),
+        color=col, mat=Enum.Material.LeafyGrass, shape=Enum.PartType.Ball,
+        collide=false, decor=true, parent=folder})
 end
 
 local function Rock(x, z, s, folder)
@@ -1061,13 +1010,13 @@ section("Terrain", function()
     for _, hs in ipairs(hillSpots) do
         local hx, hz = hs[1], hs[2]
         local hr = R(15, 30) -- hill radius
-        local hh = R(8, 20)  -- hill height
+        local hh = R(4, 12)  -- hill height (gentler rolling hills)
         terrain:FillBall(Vector3.new(hx, hh/2, hz), hr, Enum.Material.Grass)
     end
     task.wait()
 
     -- Gentle rolling hills around the perimeter (no boulder mountains)
-    for i = 1, 16 do
+    for i = 1, 8 do
         local a = (i/16)*PI*2 + 0.2
         local r = 185 + R(-15, 15)
         local mx, mz = math.cos(a)*r, math.sin(a)*r
@@ -1076,7 +1025,7 @@ section("Terrain", function()
 
     -- Enable built-in terrain grass decoration (animated blades)
     terrain.Decoration = true
-    terrain.GrassLength = 0.8 -- short, natural blades
+    terrain.GrassLength = 0.18  -- short, neat, natural
 
     -- Terrain water: 6 small ponds using terrain (looks way better than Parts)
     local ponds = {
@@ -1291,10 +1240,10 @@ section("Hub", function()
         Bush(math.cos(a)*16 + R(-2,2), math.sin(a)*16 + R(-2,2), 0.45+R()*0.35, hub)
     end
 
-    -- Ring of trees around the hub perimeter (8 trees)
-    for i=1,8 do
-        local a=(i/8)*PI*2
-        Tree(math.cos(a)*58, math.sin(a)*58, 0.8+R()*0.35, hub)
+    -- Ring of trees around the hub perimeter (6 trees, evenly spaced)
+    for i = 1, 6 do
+        local a = (i/6) * PI * 2
+        Tree(math.cos(a) * 65, math.sin(a) * 65, 0.7 + R()*0.25, hub)
     end
 end)
 
@@ -1317,10 +1266,11 @@ section("Walkways", function()
             P({name="WalkStrR"..di, size=Vector3.new(0.4,0.32,230), pos=Vector3.new(mx-3.8,0.15,mz), color=BrickColor.new("Smoky grey"), mat=wM, parent=walk})
         end
 
-        for dist=55,260,22 do
-            local tx,tz=dx*dist,dz*dist; local s=0.55+R()*0.25
-            if dx==0 then Tree(tx+13,tz,s,walk); Tree(tx-13,tz,s,walk)
-            else           Tree(tx,tz+13,s,walk); Tree(tx,tz-13,s,walk) end
+        for dist = 80, 240, 40 do  -- fewer, more spaced out
+            local tx, tz = dx*dist, dz*dist
+            local s = 0.5 + R()*0.2
+            if dx == 0 then Tree(tx+15, tz, s, walk); Tree(tx-15, tz, s, walk)
+            else Tree(tx, tz+15, s, walk); Tree(tx, tz-15, s, walk) end
         end
 
         for dist=65,260,30 do
@@ -1369,14 +1319,13 @@ end)
 -- ============================================================
 section("Plots", function()
     local pf = Instance.new("Folder"); pf.Name="PlotMarkers"; pf.Parent=workspace
-    local PLOT_GRID_SPACING = 170
-    local MAX_PLOTS = 28
+    local MAX_PLOTS = 8
+    local PLOT_RADIUS = 280  -- studs from center, outside walkways (walkways end at ~260)
 
-    local function buildPlotAt(gx, gz)
-        local cx, cz = gx * PLOT_GRID_SPACING, gz * PLOT_GRID_SPACING
+    local function buildPlotAt(cx, cz)
         local plotPos = Vector3.new(cx, 0.5, cz)
 
-        local plot = P({name="Plot_"..gx.."_"..gz, size=Vector3.new(116,0.6,116), pos=Vector3.new(cx,0.3,cz),
+        local plot = P({name=string.format("Plot_%d_%d", math.floor(cx+0.5), math.floor(cz+0.5)), size=Vector3.new(116,0.6,116), pos=Vector3.new(cx,0.3,cz),
            color=BrickColor.new("Dark green"), mat=Enum.Material.SmoothPlastic, parent=pf})
         plot.CanCollide = true
         WORLD_COUNTS.plots += 1
@@ -1416,35 +1365,12 @@ section("Plots", function()
         return plot
     end
 
-    -- Spiral coordinates: ring 0 reserved for hub, then rings increasing.
-    local coords = {}
-    local ring = 1
-    while #coords < MAX_PLOTS do
-        -- top edge: (ring,0) then diagonalish around ring using manhattan steps
-        table.insert(coords, {ring, 0})
-        table.insert(coords, {0, ring})
-        table.insert(coords, {-ring, 0})
-        table.insert(coords, {0, -ring})
-        for i=1, ring-1 do
-            table.insert(coords, {ring-i, i})
-            table.insert(coords, {-i, ring-i})
-            table.insert(coords, {-ring+i, -i})
-            table.insert(coords, {i, -ring+i})
-        end
-        ring += 1
-    end
-
-    local used = {}
-    local built = 0
-    for _, c in ipairs(coords) do
-        if built >= MAX_PLOTS then break end
-        local key = c[1]..","..c[2]
-        if not used[key] and not (c[1]==0 and c[2]==0) then
-            used[key] = true
-            built += 1
-            buildPlotAt(c[1], c[2])
-            if built % 6 == 0 then task.wait() end
-        end
+    for i = 1, MAX_PLOTS do
+        local angle = ((i-1) / MAX_PLOTS) * math.pi * 2
+        local px = math.cos(angle) * PLOT_RADIUS
+        local pz = math.sin(angle) * PLOT_RADIUS
+        buildPlotAt(px, pz)
+        if i % 4 == 0 then task.wait() end
     end
 end)
 
@@ -1478,120 +1404,50 @@ end)
 -- SECTION: NATURE
 -- ============================================================
 section("Nature", function()
-    local nat = Instance.new("Folder"); nat.Name="Nature"; nat.Parent=workspace
+    local nature = Instance.new("Folder")
+    nature.Name = "Nature"
+    nature.Parent = workspace
 
-    -- Extra props
-    local function FallenLog(x, z, len, folder)
-        local log = P({name="FallenLog", size=Vector3.new(len, 1.3, 1.3), pos=Vector3.new(x, 0.85, z),
-            color=BrickColor.new("Reddish brown"), mat=Enum.Material.Wood, shape=Enum.PartType.Cylinder, parent=folder})
-        log.CFrame = CFrame.new(x, 0.85, z) * CFrame.Angles(0, math.rad(R(-180,180)), math.rad(90))
-    end
-
-    local function SmallRock(x, z, s, folder)
-        s = s or 1
-        local r = P({name="Rock", size=Vector3.new(2.2*s, 1.4*s, 2.2*s), pos=Vector3.new(x, 0.7*s, z),
-            color=BrickColor.new("Medium stone grey"), mat=Enum.Material.Slate, shape=Enum.PartType.Ball, parent=folder})
-        r.CFrame = CFrame.new(x, 0.7*s, z) * CFrame.Angles(0, math.rad(R(-180,180)), math.rad(R(-8,8)))
-    end
-
-    local function MushroomCluster(x, z, folder)
-        for i=1, R(3,6) do
-            local mx = x + R(-10,10)*0.2
-            local mz = z + R(-10,10)*0.2
-            local h = 0.6 + R()*0.6
-            P({name="MStem", size=Vector3.new(0.18, h, 0.18), pos=Vector3.new(mx, h/2, mz),
-                color=BrickColor.new("Sand red"), mat=Enum.Material.SmoothPlastic, collide=false, parent=folder})
-            local cap = P({name="MCap", size=Vector3.new(0.55, 0.25, 0.55), pos=Vector3.new(mx, h+0.15, mz),
-                color=BrickColor.new("Bright red"), mat=Enum.Material.SmoothPlastic, shape=Enum.PartType.Ball, collide=false, parent=folder})
-            cap.CFrame = cap.CFrame * CFrame.new(0, -0.05, 0)
-            for s=1, R(2,4) do
-                P({name="MSpot", size=Vector3.new(0.12,0.12,0.12), pos=Vector3.new(mx+R(-4,4)*0.07, h+0.25, mz+R(-4,4)*0.07),
-                    color=BrickColor.new("Institutional white"), mat=Enum.Material.Neon, shape=Enum.PartType.Ball, collide=false, parent=folder})
-            end
-        end
-    end
-
-    local function NatureCluster(cx, cz, radius)
-        for i=1, R(3,6) do
-            Tree(cx+R(-radius,radius), cz+R(-radius,radius), 0.55+R()*0.65, nat)
-        end
-        for i=1, R(4,10) do
-            Bush(cx+R(-radius,radius), cz+R(-radius,radius), 0.45+R()*0.7, nat)
-        end
-        for i=1, R(10,20) do
-            Flower(cx+R(-radius,radius), cz+R(-radius,radius), nat)
-        end
-        if R() < 0.5 then FallenLog(cx+R(-radius,radius), cz+R(-radius,radius), R(7,14), nat) end
-        for i=1, R(2,5) do SmallRock(cx+R(-radius,radius), cz+R(-radius,radius), 0.6+R()*0.6, nat) end
-    end
-
-    -- Corner groves (keep, but denser)
-    for _, fc in ipairs({{-200,-200},{200,-200},{-200,200},{200,200}}) do
-        for i=1,14 do Tree(fc[1]+R(-34,34),fc[2]+R(-34,34),0.65+R()*0.55,nat) end
-        for i=1,18 do Bush(fc[1]+R(-40,40),fc[2]+R(-40,40),0.6+R()*0.55,nat) end
-        for i=1,10 do SmallRock(fc[1]+R(-36,36),fc[2]+R(-36,36),0.5+R()*0.7,nat) end
-        for i=1,20 do Flower(fc[1]+R(-42,42),fc[2]+R(-42,42),nat) end
-        if R() < 0.8 then FallenLog(fc[1]+R(-22,22), fc[2]+R(-22,22), R(8,16), nat) end
-    end
-
-    task.wait()
-
-    -- Nature clusters between walkways and plots (mid-fields)
-    local clusterSpots = {
-        {110, 110}, {110, -110}, {-110, 110}, {-110, -110},
-        {150, 40}, {150, -40}, {-150, 40}, {-150, -40},
-        {40, 150}, {-40, 150}, {40, -150}, {-40, -150},
+    -- Four sparse clusters around the map perimeter
+    local clusterCenters = {
+        {R(180, 240), R(180, 240)},
+        {R(-240, -180), R(180, 240)},
+        {R(-240, -180), R(-240, -180)},
+        {R(180, 240), R(-240, -180)},
     }
-    for _, cs in ipairs(clusterSpots) do
-        NatureCluster(cs[1], cs[2], 18)
-    end
 
-    task.wait()
-
-    -- Meadows: dense flowers in center of each quadrant
-    for _, m in ipairs({{-120,-120},{120,-120},{-120,120},{120,120}}) do
-        for i=1,60 do
-            local x = m[1] + R(-22,22)
-            local z = m[2] + R(-22,22)
-            if R() < 0.85 then Flower(x, z, nat) else Bush(x, z, 0.4+R()*0.4, nat) end
+    for _, center in ipairs(clusterCenters) do
+        local cx, cz = center[1], center[2]
+        -- 3-5 trees per cluster
+        for i = 1, 3 + R(0, 2) do
+            local tx = cx + R(-25, 25)
+            local tz = cz + R(-25, 25)
+            Tree(tx, tz, 0.7 + R()*0.4, nature)
         end
-        for i=1,8 do SmallRock(m[1]+R(-25,25), m[2]+R(-25,25), 0.45+R()*0.6, nat) end
+        -- 2-3 bushes per cluster
+        for i = 1, 2 + R(0, 1) do
+            Bush(cx + R(-15, 15), cz + R(-15, 15), 0.5 + R()*0.3, nature)
+        end
+        task.wait()
     end
 
-    task.wait()
+    -- 4 rock accent pieces near the hub
+    for i = 1, 4 do
+        local a = (i/4) * math.pi * 2 + R(-0.3, 0.3)
+        Rock(math.cos(a) * 75, math.sin(a) * 75, 0.4 + R()*0.3, nature)
+    end
 
-    -- Global scatter counts
-    for i=1,120 do
-        local tx,tz = R(-240,240), R(-240,240)
-        if math.abs(tx) > 55 or math.abs(tz) > 55 then
-            Tree(tx, tz, 0.55+R()*0.75, nat)
-            if R() < 0.35 then MushroomCluster(tx+R(-6,6), tz+R(-6,6), nat) end
+    -- Small flower patches near walkway entrances (3 patches)
+    for i = 1, 3 do
+        local a = (i/3) * math.pi * 2
+        local fx = math.cos(a) * 100
+        local fz = math.sin(a) * 100
+        for j = 1, 3 do
+            Flower(fx + R(-5, 5), fz + R(-5, 5), nature)
         end
     end
 
-    task.wait()
-
-    for i=1,150 do
-        local bx,bz = R(-240,240), R(-240,240)
-        Bush(bx, bz, 0.45+R()*0.75, nat)
-    end
-
-    task.wait()
-
-    for i=1,250 do
-        local fx,fz = R(-240,240), R(-240,240)
-        Flower(fx + R(-10,10)*0.1, fz + R(-10,10)*0.1, nat)
-    end
-
-    task.wait()
-
-    for i=1,45 do
-        SmallRock(R(-235,235), R(-235,235), 0.35+R()*0.95, nat)
-    end
-
-    for i=1,14 do
-        FallenLog(R(-220,220), R(-220,220), R(8,16), nat)
-    end
+    print("[WORLD] Nature done — sparse clusters, clean look")
 end)
 
 -- ============================================================
@@ -1620,4 +1476,5 @@ section("Buildings", function()
 end)
 
 print(string.format("[WORLD] Built: %d plots, %d buildings, %d decorations", WORLD_COUNTS.plots, WORLD_COUNTS.buildings, WORLD_COUNTS.decorations))
+print("[WORLD] Map: 8 perimeter plots, 6 hub trees, 4 nature clusters, sparse flora")
 print("[WORLD] ✅ World build complete!")
