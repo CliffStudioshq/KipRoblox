@@ -453,18 +453,109 @@ local function ShopRow(parent, icon, name, desc)
     return row, buy, meta
 end
 
--- Placeholder rows (server-driven prices/levels should fill these later)
-ShopRow(plotTab, "🏗️", "Upgrade Building", "Increase plot output")
-ShopRow(plotTab, "🖼️", "Decoration Slot", "Add or swap decorations")
+-- ============================================================
+-- SHOP CONTENT — Plot Upgrades Tab
+-- ============================================================
+local function RefreshShopData()
+    if not getDataFn then return end
+    local ok, result = pcall(function() return getDataFn:InvokeServer() end)
+    if not (ok and result) then return end
+    local data = (result.ok and result.data) or result
+    if not data then return end
 
-ShopRow(playerTab, "⚡", "Data Rate", "Earn more data per second")
-ShopRow(playerTab, "👟", "Speed", "Move faster")
-ShopRow(playerTab, "🧲", "Orb Magnetism", "Collect orbs from farther away")
+    -- Update shop data display
+    shopDataLabel.Text = "💰 " .. fmt(data.Data)
 
-ShopRow(funTab, "✨", "Title", "Show off with a title")
-ShopRow(funTab, "🌈", "Particle Trail", "A subtle trail")
-ShopRow(funTab, "🔥", "Fire Trail", "Spicy footsteps")
-ShopRow(funTab, "🧸", "Pet", "A buddy that follows you")
+    -- Update plot upgrade button
+    local plotTier = data.Plot and data.Plot.tier or 1
+    local nextTier = plotTier + 1
+    local plotBuildings = {
+        {name="Data Outpost", cost=500}, {name="Server Room", cost=2000},
+        {name="Data Center", cost=8000}, {name="Tech Campus", cost=25000},
+        {name="Quantum Labs", cost=75000}, {name="Neural Nexus", cost=200000},
+        {name="Singularity Core", cost=500000},
+    }
+    if nextTier <= #plotBuildings then
+        local nb = plotBuildings[nextTier]
+        plotUpgradeBtn.Text = "🏗️ " .. nb.name .. "\n💰 " .. fmt(nb.cost)
+        plotUpgradeBtn.BackgroundColor3 = (data.Data >= nb.cost) and C.GREEN or Color3.fromRGB(80,80,80)
+    else
+        plotUpgradeBtn.Text = "✅ Max Level"
+        plotUpgradeBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    end
+end
+
+-- Plot upgrade button
+local plotUpgradeRow = Instance.new("Frame")
+plotUpgradeRow.Size = UDim2.new(1, -2, 0, 80)
+plotUpgradeRow.BackgroundColor3 = C.CARD
+plotUpgradeRow.BackgroundTransparency = 0.08
+plotUpgradeRow.Parent = plotTab
+corner(plotUpgradeRow, 12)
+
+local plotUpgradeBtn = Instance.new("TextButton")
+plotUpgradeBtn.Size = UDim2.new(1, -16, 1, -16)
+plotUpgradeBtn.Position = UDim2.new(0, 8, 0, 8)
+plotUpgradeBtn.BackgroundColor3 = C.GREEN
+plotUpgradeBtn.Text = "🏗️ Upgrade Building"
+plotUpgradeBtn.TextColor3 = Color3.new(1,1,1)
+plotUpgradeBtn.TextSize = 14
+plotUpgradeBtn.Font = Enum.Font.GothamBold
+plotUpgradeBtn.Parent = plotUpgradeRow
+corner(plotUpgradeBtn, 10)
+
+plotUpgradeBtn.MouseButton1Click:Connect(function()
+    if not purchasePlotBuildingEv then return end
+    purchasePlotBuildingEv:FireServer({plotX = (plotState and plotState.gridX) or 0, plotZ = (plotState and plotState.gridZ) or 0})
+end)
+
+-- Player upgrade buttons
+local upgradeList = {
+    {"dataMiningSpeed", "⚡", "Data Mining Speed", "+2 Data/sec per level"},
+    {"orbMagnetism", "🧲", "Orb Magnetism", "+3 orb range per level"},
+    {"orbValue", "💎", "Orb Value", "+1 Data per orb per level"},
+    {"walkSpeed", "👟", "Walk Speed", "+2 speed per level"},
+    {"jumpBoost", "🦘", "Jump Boost", "+5 jump power per level"},
+}
+
+for _, upg in ipairs(upgradeList) do
+    local key, icon, name, desc = upg[1], upg[2], upg[3], upg[4]
+    local row, buyBtn, meta = ShopRow(playerTab, icon, name, desc)
+    buyBtn.Text = "Buy"
+    buyBtn.MouseButton1Click:Connect(function()
+        if not purchasePlayerUpgradeEv then return end
+        purchasePlayerUpgradeEv:FireServer(key)
+    end)
+end
+
+-- Fun upgrade buttons
+local funList = {
+    {"particleTrail", "✨", "Particle Trail", "Sparkly trail behind you"},
+    {"titleMiner", "🏷️", "Title: Data Miner", "Show your status"},
+    {"titleBaron", "👑", "Title: Data Baron", "Flex on others"},
+    {"auraEffect", "💫", "Aura Effect", "Glowing aura"},
+    {"petOrb", "🔮", "Pet: Data Orb", "A floating orb friend"},
+}
+
+for _, upg in ipairs(funList) do
+    local key, icon, name, desc = upg[1], upg[2], upg[3], upg[4]
+    local row, buyBtn, meta = ShopRow(funTab, icon, name, desc)
+    buyBtn.Text = "Buy"
+    buyBtn.MouseButton1Click:Connect(function()
+        if not purchaseFunUpgradeEv then return end
+        purchaseFunUpgradeEv:FireServer(key)
+    end)
+end
+
+-- Refresh shop data periodically
+task.spawn(function()
+    while gui and gui.Parent do
+        task.wait(2)
+        if shopFrame.Visible then
+            RefreshShopData()
+        end
+    end
+end)
 
 -- Stats should stay disabled until server confirms data is loaded
 local statsEnabled = false
@@ -507,6 +598,8 @@ local plotState = {
     plotId = nil,
     buildingName = nil,
     dpsBonus = nil,
+    gridX = 0,
+    gridZ = 0,
     decorations = {"Empty", "Empty", "Empty"},
 }
 
@@ -922,11 +1015,30 @@ task.spawn(function()
     local decorChangedEv = Ev("DecorationChanged")
     local playerUpgEv = Ev("PlayerUpgraded")
 
+    -- v0.30 purchase events
+    local purchasePlotBuildingEv = Ev("PurchasePlotBuilding")
+    local purchaseDecorationEv = Ev("PurchaseDecoration")
+    local purchasePlayerUpgradeEv = Ev("PurchasePlayerUpgrade")
+    local purchaseFunUpgradeEv = Ev("PurchaseFunUpgrade")
+
     if dataReadyEv then
         dataReadyEv.OnClientEvent:Connect(function()
             statsEnabled = true
             statsBtn.Text = "📊  Stats"
             statsBtn.AutoButtonColor = true
+            -- Fetch initial data
+            if getDataFn then
+                local ok, result = pcall(function() return getDataFn:InvokeServer() end)
+                if ok and result and result.data then
+                    local d = result.data
+                    if d.Plot then
+                        plotState.gridX = d.Plot.gridX or 0
+                        plotState.gridZ = d.Plot.gridZ or 0
+                        plotState.buildingName = PLOT_BUILDING_NAMES[d.Plot.tier or 1] or "Empty Plot"
+                        plotState.dpsBonus = 0
+                    end
+                end
+            end
         end)
     end
 
@@ -1232,4 +1344,43 @@ task.spawn(function()
 
     print("[CLIENT] ✅ All systems connected!")
     Notify("DataTycoon loaded! Walk into orbs to collect data. ⚡", C.CYAN)
+
+    -- Plot upgrade button proximity detection
+    local plotMarkers = workspace:FindFirstChild("PlotMarkers")
+    if plotMarkers then
+        local function setupPlotButton(btn)
+            if not btn then return end
+            btn.Touched:Connect(function(hit)
+                local character = hit.Parent
+                local plr = Players:GetPlayerFromCharacter(character)
+                if plr ~= player then return end
+
+                if btn.Name == "Btn_UpgradeBuilding" then
+                    -- Find which plot this button belongs to
+                    local plotPart = btn.Parent:FindFirstChildWhichIsA("BasePart")
+                    if plotPart and purchasePlotBuildingEv then
+                        purchasePlotBuildingEv:FireServer({
+                            plotX = math.floor(plotPart.Position.X + 0.5),
+                            plotZ = math.floor(plotPart.Position.Z + 0.5)
+                        })
+                    end
+                elseif btn.Name == "Btn_UpgradeDecor" then
+                    Notify("Open shop (F) to buy decorations!", C.CYAN)
+                end
+            end)
+        end
+
+        for _, btn in ipairs(plotMarkers:GetChildren()) do
+            if btn.Name == "Btn_UpgradeBuilding" or btn.Name == "Btn_UpgradeDecor" then
+                setupPlotButton(btn)
+            end
+        end
+
+        plotMarkers.DescendantAdded:Connect(function(child)
+            task.wait(0.1)
+            if child.Name == "Btn_UpgradeBuilding" or child.Name == "Btn_UpgradeDecor" then
+                setupPlotButton(child)
+            end
+        end)
+    end
 end)

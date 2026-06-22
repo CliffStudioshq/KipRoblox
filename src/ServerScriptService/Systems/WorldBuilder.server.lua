@@ -1352,10 +1352,12 @@ section("Plots", function()
         tier1.Parent = pf
 
         -- Upgrade buttons
-        local b1 = CreateUpgradeButton(plotPos + Vector3.new(0, 0.35, 0), "⬆️ Upgrade Plot\n(enter)", Color3.fromRGB(0,170,255))
+        local b1 = CreateUpgradeButton(plotPos + Vector3.new(0, 0.35, 0),
+            "⬆️ Upgrade Building\nWalk here to upgrade", Color3.fromRGB(0,170,255))
         b1.Name = "Btn_UpgradeBuilding"
         b1.Parent = pf
-        local b2 = CreateUpgradeButton(plotPos + Vector3.new(36, 0.35, 36), "✨ Add Decor\n(enter)", Color3.fromRGB(255, 200, 0))
+        local b2 = CreateUpgradeButton(plotPos + Vector3.new(36, 0.35, 36),
+            "✨ Add Decoration\nWalk here to decorate", Color3.fromRGB(255, 200, 0))
         b2.Name = "Btn_UpgradeDecor"
         b2.Parent = pf
 
@@ -1371,6 +1373,34 @@ section("Plots", function()
         local pz = math.sin(angle) * PLOT_RADIUS
         buildPlotAt(px, pz)
         if i % 4 == 0 then task.wait() end
+    end
+
+    -- Build bridges from hub to each plot
+    local hubPlatform = workspace:FindFirstChild("HubPlatform")
+    if not hubPlatform then
+        -- Try to find any hub part
+        for _, p in ipairs(workspace:GetChildren()) do
+            if p.Name == "HubPlatform" or p.Name == "Hub" then
+                hubPlatform = p
+                break
+            end
+        end
+    end
+
+    if hubPlatform and typeof(BuildBridge) == "function" then
+        for _, plot in ipairs(pf:GetChildren()) do
+            if plot:IsA("BasePart") and plot.Name:match("^Plot_") then
+                local success, err = pcall(function()
+                    BuildBridge(plot.Name, 1, "Server", 0)
+                end)
+                if not success then
+                    warn("[WORLD] Bridge build failed for " .. plot.Name .. ": " .. tostring(err))
+                end
+            end
+        end
+        print("[WORLD] Built bridges to " .. WORLD_COUNTS.plots .. " plots")
+    else
+        warn("[WORLD] Could not find hub platform for bridge building")
     end
 end)
 

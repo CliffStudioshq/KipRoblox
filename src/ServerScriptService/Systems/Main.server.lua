@@ -287,24 +287,15 @@ local function ApplyPlayerStats(player)
     humanoid.JumpPower = baseJump + (upgrades.jumpBoost or 0) * (PLAYER_UPGRADES.jumpBoost.baseEffect)
 end
 
-local function SpiralCoord(n)
-    if n == 0 then return 0, 0 end
-    local ring = math.ceil((math.sqrt(n + 1) - 1) / 2)
-    local sideLen = ring * 2
-    local maxVal = (2 * ring + 1) ^ 2 - 1
-    local d = maxVal - n
-    local side = math.floor(d / sideLen)
-    local pos = d % sideLen
+local PLOT_GRID_SPACING = 170  -- keep for backward compat
 
-    if side == 0 then
-        return ring - pos, -ring
-    elseif side == 1 then
-        return -ring, -ring + pos
-    elseif side == 2 then
-        return -ring + pos, ring
-    else
-        return ring, ring - pos
-    end
+-- 8 fixed plot positions evenly spaced around perimeter at radius 280
+local PLOT_POSITIONS = {}
+for i = 1, 8 do
+    local angle = ((i-1) / 8) * math.pi * 2
+    local px = math.cos(angle) * 280
+    local pz = math.sin(angle) * 280
+    PLOT_POSITIONS[i] = {x = px, z = pz}
 end
 
 local function AssignPlot(player)
@@ -312,12 +303,14 @@ local function AssignPlot(player)
     if not data then return end
     data.Plot = data.Plot or {tier = 1, decorations = {}, gridX = 0, gridZ = 0}
 
+    -- Already assigned? Just update center from saved grid coords
     if data._plotAssigned == true then
-        data.Plot.plotCenter = Vector3.new((data.Plot.gridX or 0) * PLOT_GRID_SPACING, 0.5, (data.Plot.gridZ or 0) * PLOT_GRID_SPACING)
+        data.Plot.plotCenter = Vector3.new((data.Plot.gridX or 0), 0.5, (data.Plot.gridZ or 0))
         PlayerPlot[player.UserId] = data.Plot
         return
     end
 
+    -- Find first unoccupied plot position
     local used = {}
     for _, pd in pairs(PlayerData) do
         if pd and pd._plotAssigned == true and pd.Plot then
@@ -325,22 +318,15 @@ local function AssignPlot(player)
         end
     end
 
-    local idx = 0
-    while true do
-        local gx, gz = SpiralCoord(idx)
-        local key = tostring(gx) .. "," .. tostring(gz)
+    for i, pos in ipairs(PLOT_POSITIONS) do
+        local key = tostring(math.floor(pos.x+0.5)) .. "," .. tostring(math.floor(pos.z+0.5))
         if not used[key] then
-            data.Plot.gridX = gx
-            data.Plot.gridZ = gz
-            data.Plot.plotCenter = Vector3.new(gx * PLOT_GRID_SPACING, 0.5, gz * PLOT_GRID_SPACING)
+            data.Plot.gridX = math.floor(pos.x+0.5)
+            data.Plot.gridZ = math.floor(pos.z+0.5)
+            data.Plot.plotCenter = Vector3.new(pos.x, 0.5, pos.z)
             data._plotAssigned = true
             PlayerPlot[player.UserId] = data.Plot
-            print(string.format("[PLOT] Assigned %s to grid (%d,%d)", player.Name, gx, gz))
-            break
-        end
-        idx += 1
-        if idx > 20000 then
-            warn("[PLOT] Failed to assign plot for " .. player.Name)
+            print(string.format("[PLOT] Assigned %s to plot %d (%.0f, %.0f)", player.Name, i, pos.x, pos.z))
             break
         end
     end
@@ -421,13 +407,11 @@ local function LoadPlayerData(player)
             end
 
             if v < 6 then
-                -- Migrate from old plot system to new
                 saved.Plot = saved.Plot or {tier = 1, decorations = {}, gridX = 0, gridZ = 0}
                 saved.Upgrades = saved.Upgrades or {dataMiningSpeed=0, orbMagnetism=0, orbValue=0, idleMining=0, walkSpeed=0, sprintPower=0, jumpBoost=0}
                 saved.FunUpgrades = saved.FunUpgrades or {}
-                saved.Title = saved.Title or ""
-                saved.Pet = saved.Pet or ""
-                -- Remove old fields
+                saved.Title = ""
+                saved.Pet = ""
                 saved.Plots = nil
                 saved.Computers = nil
                 saved.HouseTier = nil
@@ -514,6 +498,28 @@ local function LoadPlayerData(player)
     -- Assign single plot + cache upgrades
     AssignPlot(player)
     PlayerUpgrades[player.UserId] = data.Upgrades
+
+    -- Build bridge from hub to plot
+    if typeof(BuildBridge) == "function" and data.Plot then
+        local plotCenter = data.Plot.plotCenter
+        if plotCenter then
+            -- Find the plot part in workspace
+            local plotPart = nil
+            for _, p in ipairs(workspace.PlotMarkers:GetChildren()) do
+                if p:IsA("BasePart") and p.Name:match("^Plot_") then
+                    local dist = (p.Position - plotCenter).Magnitude
+                    if dist < 100 then
+                        plotPart = p
+                        break
+                    end
+                end
+            end
+            if plotPart then
+                BuildBridge(plotPart.Name, data.Plot.tier or 1, player.Name, player.UserId)
+                BridgeBuilt:FireAllClients(plotPart.Name, player.Name, player.UserId)
+            end
+        end
+    end
 
     -- Build leaderstats — ALL children added before parenting (atomic replication)
     local ls = Instance.new("Folder")
