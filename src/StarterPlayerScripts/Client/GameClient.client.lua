@@ -477,11 +477,71 @@ local function RefreshShopData()
     }
     if nextTier <= #plotBuildings then
         local nb = plotBuildings[nextTier]
+        local canAfford = data.Data >= nb.cost
         plotUpgradeBtn.Text = "🏗️ " .. nb.name .. "\n💰 " .. fmt(nb.cost)
-        plotUpgradeBtn.BackgroundColor3 = (data.Data >= nb.cost) and C.GREEN or Color3.fromRGB(80,80,80)
+        plotUpgradeBtn.BackgroundColor3 = canAfford and C.GREEN or Color3.fromRGB(80,80,80)
     else
-        plotUpgradeBtn.Text = "✅ Max Level"
+        plotUpgradeBtn.Text = "✅ Max Level Reached"
         plotUpgradeBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+    end
+
+    -- Update player upgrade rows with current levels and costs
+    local upgradeLevels = data.Upgrades or {}
+    local upgradeInfo = {
+        {key="dataMiningSpeed", base=500, scale=1.5, max=20, name="Data Mining Speed"},
+        {key="orbMagnetism", base=1000, scale=1.8, max=10, name="Orb Magnetism"},
+        {key="orbValue", base=2000, scale=2.0, max=10, name="Orb Value"},
+        {key="walkSpeed", base=300, scale=1.6, max=10, name="Walk Speed"},
+        {key="jumpBoost", base=1500, scale=2.0, max=5, name="Jump Boost"},
+    }
+    for _, upg in ipairs(upgradeInfo) do
+        local lvl = upgradeLevels[upg.key] or 0
+        local cost = math.floor(upg.base * (upg.scale ^ lvl))
+        local maxed = lvl >= upg.max
+        local canAfford = data.Data >= cost
+
+        -- Find matching row in playerTab
+        for _, row in ipairs(playerTab:GetChildren()) do
+            if row:IsA("Frame") then
+                local foundName = false
+                for _, label in ipairs(row:GetDescendants()) do
+                    if label:IsA("TextLabel") and string.find(label.Text, upg.name) then
+                        foundName = true; break
+                    end
+                end
+                if foundName then
+                    -- Update buy button
+                    for _, btn in ipairs(row:GetDescendants()) do
+                        if btn:IsA("TextButton") and (btn.Text == "Buy" or btn.Text == "MAX" or string.find(btn.Text, "Need")) then
+                            if maxed then
+                                btn.Text = "MAX"
+                                btn.BackgroundColor3 = Color3.fromRGB(60,60,60)
+                            elseif canAfford then
+                                btn.Text = "Buy"
+                                btn.BackgroundColor3 = C.GREEN
+                            else
+                                btn.Text = "Need " .. fmt(cost)
+                                btn.BackgroundColor3 = Color3.fromRGB(80,80,80)
+                            end
+                        end
+                    end
+                    -- Update meta label (the 11pt DIM label)
+                    for _, label in ipairs(row:GetDescendants()) do
+                        if label:IsA("TextLabel") and label.TextSize == 11 and label.TextColor3 == C.DIM then
+                            if maxed then
+                                label.Text = "Lv." .. lvl .. "/" .. upg.max .. " MAX"
+                                label.TextColor3 = C.GOLD
+                            else
+                                label.Text = "Lv." .. lvl .. "/" .. upg.max .. " | " .. fmt(cost)
+                                label.TextColor3 = canAfford and C.GREEN or C.DIM
+                            end
+                            break
+                        end
+                    end
+                    break
+                end
+            end
+        end
     end
 end
 
@@ -1104,7 +1164,7 @@ task.spawn(function()
             if dpsBonus ~= nil then plotState.dpsBonus = dpsBonus end
             plotInfoFrame.Visible = true
             UpdatePlotInfoUI()
-            Notify("📦 Plot upgraded!", C.GREEN)
+            Notify("📦 Upgraded to " .. tostring(newBuildingName or "new building\") .. "!", C.GREEN)
             TryAttachPlotBillboards()
         end)
     end

@@ -288,8 +288,6 @@ local function ApplyPlayerStats(player)
     humanoid.JumpPower = baseJump + (upgrades.jumpBoost or 0) * (PLAYER_UPGRADES.jumpBoost.baseEffect)
 end
 
-local PLOT_GRID_SPACING = 170  -- keep for backward compat
-
 -- 8 fixed plot positions evenly spaced around perimeter at radius 280
 local PLOT_POSITIONS = {}
 for i = 1, 8 do
@@ -932,6 +930,8 @@ Players.PlayerRemoving:Connect(function(player)
     task.delay(5, function()
         PlayerData[player.UserId]   = nil
         orbCooldowns[player.UserId] = nil
+        PlayerPlot[player.UserId]    = nil
+        PlayerUpgrades[player.UserId] = nil
     end)
 end)
 
